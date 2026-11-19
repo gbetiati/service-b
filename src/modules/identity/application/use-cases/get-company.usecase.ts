@@ -7,6 +7,8 @@ export class GetCompanyUseCase {
   constructor(
     private readonly companyRepository: CompanyRepository,
   ) {}
-  async execute()
-  { return requireRecord(await this.companyRepository.findCurrent(), 'Empresa'); }
+
+  async execute () {
+    return requireRecord(await this.companyRepository.findCurrent(), 'Empresa');
+  }
 }

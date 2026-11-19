@@ -12,8 +12,7 @@ export class CreateProductCategoryUseCase {
     private readonly requestContext: RequestContext,
   ) {}
 
-  execute(dto: CreateProductCategoryDto)
-  {
+  execute (dto: CreateProductCategoryDto) {
     const entity = ProductCategory.create(this.requestContext.companyId, dto.name);
     return this.productCategoryRepository.create(entity);
   }

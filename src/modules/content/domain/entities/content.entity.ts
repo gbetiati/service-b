@@ -20,21 +20,20 @@ export class Content {
     readonly updatedAt: Date,
   ) {}
 
-  static create(companyId: string, fields: ContentFields)
-  {
+  static create (companyId: string, fields: ContentFields) {
     const now = new Date();
     return new Content(randomUUID(), companyId, fields, 1, ContentStatus.WAITING, now, now);
   }
 
-  revise(fields: ContentFields)
-  {
+  revise (fields: ContentFields) {
     return new Content(this.id, this.companyId, fields, this.revision + 1, ContentStatus.WAITING, this.createdAt, new Date());
   }
 
-  get allProductIds() {
+  get allProductIds () {
     if (this.fields.productIds.includes(this.fields.productId)) {
       throw new AppError('invalid', 'Use productIds somente para produtos adicionais.');
     }
+
     return [this.fields.productId, ...this.fields.productIds];
   }
 }

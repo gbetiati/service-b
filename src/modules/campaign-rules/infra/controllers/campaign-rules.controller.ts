@@ -16,17 +16,17 @@ export class CampaignRulesController {
   ) {}
 
   @Post()
-  create(@Body() dto: CreateCampaignRulesDto) {
+  create (@Body() dto: CreateCampaignRulesDto) {
     return this.createCampaignRulesUseCase.execute(dto);
   }
 
   @Get()
-  list() {
+  list () {
     return this.listCampaignRulesUseCase.execute();
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
+  get (@Param('id', ParseUUIDPipe) id: string) {
     return this.getCampaignRulesUseCase.execute(id);
   }
 }

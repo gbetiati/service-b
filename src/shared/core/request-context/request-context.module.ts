@@ -5,6 +5,7 @@ import { RequestContextMiddleware } from './request-context.middleware';
 @Global()
 @Module({ providers: [RequestContext], exports: [RequestContext] })
 export class RequestContextModule implements NestModule {
-  configure(consumer: MiddlewareConsumer)
-  { consumer.apply(RequestContextMiddleware).forRoutes('{*path}'); }
+  configure (consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('{*path}');
+  }
 }

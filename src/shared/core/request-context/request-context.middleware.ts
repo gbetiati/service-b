@@ -7,6 +7,8 @@ export class RequestContextMiddleware implements NestMiddleware {
   constructor(
     private readonly requestContext: RequestContext,
   ) {}
-  use(_req: Request, _res: Response, next: NextFunction)
-  { this.requestContext.run(next); }
+
+  use (_req: Request, _res: Response, next: NextFunction) {
+    this.requestContext.run(next);
+  }
 }

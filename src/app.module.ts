@@ -1,4 +1,3 @@
-import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -19,17 +18,6 @@ import { RequestContextModule } from './shared/core/request-context/request-cont
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RequestContextModule, ScheduleModule.forRoot(),
-    BullModule.forRootAsync({
-      useFactory: () => {
-        const url = new URL(process.env.REDIS_URL || 'redis://localhost:6379');
-        if (!['redis:', 'rediss:'].includes(url.protocol)) throw new Error('REDIS_URL precisa usar redis:// ou rediss://.');
-        return { connection: {
-          host: url.hostname, port: Number(url.port || 6379), db: Number(url.pathname.slice(1) || 0),
-          username: decodeURIComponent(url.username) || undefined, password: decodeURIComponent(url.password) || undefined,
-          tls: url.protocol === 'rediss:' ? {} : undefined,
-        } };
-      },
-    }),
     IdentityModule, BrandModule, CampaignModule, CampaignRulesModule, ProductModule, ProductCategoryModule, MediaAssetModule,
     ContentModule, VideoGenerationModule, SocialAccountModule, PublicationModule,
   ],

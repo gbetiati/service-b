@@ -1,2 +1,5 @@
 export const PUBLICATION_PREPARATION_MS = 5 * 60_000;
 export const PUBLICATION_GRACE_MS = 30 * 60_000;
+export const CLAIM_LEASE_MS = 180_000;
+export const PUBLICATION_CRON_BATCH_SIZE = 4;
+export const DEFAULT_DEFER_MS = 60_000;

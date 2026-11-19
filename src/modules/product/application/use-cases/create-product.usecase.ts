@@ -16,10 +16,11 @@ export class CreateProductUseCase {
     private readonly productCategoryRepository: ProductCategoryRepository,
   ) {}
 
-  async execute(dto: CreateProductDto)
-  {
+  async execute (dto: CreateProductDto) {
     requireRecord(await this.brandRepository.findById(dto.brandId), 'Marca');
+
     if (dto.categoryId) requireRecord(await this.productCategoryRepository.findById(dto.categoryId), 'Categoria');
+
     const entity = Product.create(this.requestContext.companyId, dto.name, dto.brandId, dto.categoryId ?? null, dto.description ?? null);
     return this.productRepository.create(entity);
   }

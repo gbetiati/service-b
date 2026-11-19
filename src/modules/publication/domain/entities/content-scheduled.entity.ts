@@ -1,4 +1,5 @@
 import { ContentStatus } from '@/modules/content/domain/entities/content-status';
+import { PublicationPolicy } from './publication.policy';
 import { AppError } from '@/shared/core/errors/app.error';
 
 export class ContentScheduled {
@@ -13,14 +14,12 @@ export class ContentScheduled {
     readonly updatedAt: Date,
   ) {}
 
-  static validateDate(date: Date)
-  {
+  static validateDate (date: Date) {
     if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) throw new AppError('invalid', 'Escolha uma data futura.');
   }
 
-  static validateVideo(status: ContentStatus, revision: number, videoStatus: ContentStatus, videoRevision: number)
-  {
-    if ((status !== ContentStatus.APPROVED && status !== ContentStatus.READY) || videoStatus !== ContentStatus.APPROVED || revision !== videoRevision) {
+  static validateVideo (status: ContentStatus, revision: number, videoStatus: ContentStatus, videoRevision: number) {
+    if (!PublicationPolicy.isApprovedVideo(status, revision, videoStatus, videoRevision)) {
       throw new AppError('conflict', 'Use um vídeo aprovado da revisão atual do conteúdo.');
     }
   }

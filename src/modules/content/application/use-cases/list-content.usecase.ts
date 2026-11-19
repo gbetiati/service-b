@@ -7,6 +7,8 @@ export class ListContentUseCase {
   constructor(
     private readonly contentRepository: ContentRepository,
   ) {}
-  execute(page: ContentPageDto)
-  { return this.contentRepository.findAll(page.offset, page.limit); }
+
+  execute (page: ContentPageDto) {
+    return this.contentRepository.findAll(page.offset, page.limit);
+  }
 }

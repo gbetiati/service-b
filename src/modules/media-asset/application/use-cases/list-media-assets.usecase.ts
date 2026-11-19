@@ -9,8 +9,8 @@ export class ListMediaAssetsUseCase {
     private readonly mediaAssetRepository: MediaAssetRepository,
     private readonly productRepository: ProductRepository,
   ) {}
-  async execute(productId: string)
-  {
+
+  async execute (productId: string) {
     requireRecord(await this.productRepository.findById(productId), 'Produto');
     return this.mediaAssetRepository.findByProduct(productId);
   }

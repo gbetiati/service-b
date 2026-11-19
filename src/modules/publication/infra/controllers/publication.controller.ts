@@ -14,12 +14,12 @@ export class PublicationController {
   ) {}
 
   @Post()
-  schedule(@Body() dto: SchedulePublicationDto) {
+  schedule (@Body() dto: SchedulePublicationDto) {
     return this.schedulePublicationUseCase.execute(dto);
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
+  get (@Param('id', ParseUUIDPipe) id: string) {
     return this.getPublicationUseCase.execute(id);
   }
 }

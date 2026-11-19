@@ -6,6 +6,8 @@ export class ListCampaignUseCase {
   constructor(
     private readonly campaignRepository: CampaignRepository,
   ) {}
-  execute()
-  { return this.campaignRepository.findAll(); }
+
+  execute () {
+    return this.campaignRepository.findAll();
+  }
 }

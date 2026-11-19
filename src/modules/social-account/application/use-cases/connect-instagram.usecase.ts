@@ -16,12 +16,15 @@ export class ConnectInstagramUseCase {
     private readonly requestContext: RequestContext,
   ) {}
 
-  async execute(dto: InstagramCallbackDto, nonce: string | undefined)
-  {
+  async execute (dto: InstagramCallbackDto, nonce: string | undefined) {
     if (!nonce || !/^[A-Za-z0-9_-]{43}$/.test(nonce)) throw new AppError('invalid', 'Abra a autorização no navegador que iniciou a conexão.');
+
     const identity = await this.socialAccountRepository.consumeState(createHash('sha256').update(dto.state + '.' + nonce).digest('hex'));
+
     if (!identity) throw new AppError('invalid', 'A autorização expirou ou já foi utilizada.');
+
     if (dto.error || !dto.code) throw new AppError('invalid', 'A autorização do Instagram não foi concluída.');
+
     this.requestContext.setIdentity(identity);
     const { accessToken, ...profile } = await this.socialPlatformProvider.connect(dto.code);
     return this.socialAccountRepository.saveInstagram(profile, this.tokenCipherProvider.encrypt(accessToken, identity.companyId));

@@ -23,27 +23,27 @@ export class ContentController {
   ) { }
 
   @Post()
-  async create(@Body() dto: CreateContentDto) {
+  async create (@Body() dto: CreateContentDto) {
     return ContentMapper.toResponse(await this.createContentUseCase.execute(dto));
   }
 
   @Patch(':id')
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateContentDto) {
+  async update (@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateContentDto) {
     return ContentMapper.toResponse(await this.updateContentUseCase.execute(id, dto));
   }
 
   @Get()
-  async list(@Query() page: ContentPageDto) {
+  async list (@Query() page: ContentPageDto) {
     return (await this.listContentUseCase.execute(page)).map(ContentMapper.toResponse);
   }
 
   @Get(':id')
-  async get(@Param('id', ParseUUIDPipe) id: string) {
+  async get (@Param('id', ParseUUIDPipe) id: string) {
     return ContentMapper.toResponse(await this.getContentDetailsUseCase.execute(id));
   }
 
   @Get(':id/history')
-  history(@Param('id', ParseUUIDPipe) id: string, @Query() page: ContentPageDto) {
+  history (@Param('id', ParseUUIDPipe) id: string, @Query() page: ContentPageDto) {
     return this.getContentHistoryUseCase.execute(id, page);
   }
 }

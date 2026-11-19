@@ -5,9 +5,11 @@ import { SessionTokenProvider } from '../../domain/providers/session-token.provi
 
 export const jwtClaims = { issuer: 'service-b', audience: 'service-b-api' };
 
-export function jwtSecret() {
+export function jwtSecret () {
   const secret = requiredEnv('JWT_SECRET');
+
   if (Buffer.byteLength(secret) < 32) throw new Error('JWT_SECRET precisa ter pelo menos 32 bytes.');
+
   return secret;
 }
 
@@ -16,8 +18,8 @@ export class JwtTokenProvider implements SessionTokenProvider {
   constructor(
     private readonly jwtService: JwtService,
   ) {}
-  sign(userId: string, companyId: string)
-  {
+
+  sign (userId: string, companyId: string) {
     return this.jwtService.signAsync({ sub: userId, companyId }, { ...jwtClaims, expiresIn: '1h', algorithm: 'HS256' });
   }
 }

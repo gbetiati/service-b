@@ -12,13 +12,13 @@ export class AuthController {
   ) {}
 
   @Post('signup')
-  signup(@Body() dto: SignupDto) {
+  signup (@Body() dto: SignupDto) {
     return this.signupUseCase.execute(dto);
   }
 
   @Post('login')
   @HttpCode(200)
-  login(@Body() dto: LoginDto) {
+  login (@Body() dto: LoginDto) {
     return this.loginUseCase.execute(dto);
   }
 }

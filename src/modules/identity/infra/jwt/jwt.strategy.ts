@@ -12,11 +12,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({ jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), secretOrKey: jwtSecret(), ...jwtClaims, algorithms: ['HS256'] });
   }
 
-  async validate(claims: { sub?: string; companyId?: string })
-  {
+  async validate (claims: { sub?: string; companyId?: string }) {
     if (typeof claims.sub !== 'string' || typeof claims.companyId !== 'string' || !await this.userRepository.exists(claims.sub, claims.companyId)) {
       throw new UnauthorizedException();
     }
+
     return { userId: claims.sub, companyId: claims.companyId };
   }
 }

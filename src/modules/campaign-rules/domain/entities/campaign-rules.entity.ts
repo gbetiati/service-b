@@ -11,8 +11,7 @@ export class CampaignRules {
     readonly guidelines: string,
   ) {}
 
-  static create(companyId: string, name: string, campaingId: string, guidelines: string)
-  {
+  static create (companyId: string, name: string, campaingId: string, guidelines: string) {
     const now = new Date();
     return new CampaignRules(randomUUID(), companyId, name, now, now, campaingId, guidelines);
   }

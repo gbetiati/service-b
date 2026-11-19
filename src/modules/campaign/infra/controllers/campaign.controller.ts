@@ -16,17 +16,17 @@ export class CampaignController {
   ) {}
 
   @Post()
-  create(@Body() dto: CreateCampaignDto) {
+  create (@Body() dto: CreateCampaignDto) {
     return this.createCampaignUseCase.execute(dto);
   }
 
   @Get()
-  list() {
+  list () {
     return this.listCampaignUseCase.execute();
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
+  get (@Param('id', ParseUUIDPipe) id: string) {
     return this.getCampaignUseCase.execute(id);
   }
 }

@@ -7,6 +7,8 @@ export class GetCampaignRulesUseCase {
   constructor(
     private readonly campaignRulesRepository: CampaignRulesRepository,
   ) {}
-  async execute(id: string)
-  { return requireRecord(await this.campaignRulesRepository.findById(id), 'CampaignRules'); }
+
+  async execute (id: string) {
+    return requireRecord(await this.campaignRulesRepository.findById(id), 'CampaignRules');
+  }
 }

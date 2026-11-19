@@ -11,8 +11,7 @@ export class Campaign {
     readonly objective: string | null,
   ) {}
 
-  static create(companyId: string, name: string, brandId: string, objective: string | null)
-  {
+  static create (companyId: string, name: string, brandId: string, objective: string | null) {
     const now = new Date();
     return new Campaign(randomUUID(), companyId, name, now, now, brandId, objective);
   }

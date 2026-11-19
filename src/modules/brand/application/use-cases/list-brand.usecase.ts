@@ -6,6 +6,8 @@ export class ListBrandUseCase {
   constructor(
     private readonly brandRepository: BrandRepository,
   ) {}
-  execute()
-  { return this.brandRepository.findAll(); }
+
+  execute () {
+    return this.brandRepository.findAll();
+  }
 }

@@ -15,8 +15,7 @@ export class InstagramProvider implements SocialPlatformProvider {
     private readonly externalApiProvider: ExternalApiProvider,
   ) { }
 
-  authorizationUrl(state: string)
-  {
+  authorizationUrl (state: string) {
     const url = new URL('https://www.instagram.com/oauth/authorize');
     url.search = new URLSearchParams({
       client_id: requiredEnv('INSTAGRAM_APP_ID'), redirect_uri: requiredEnv('INSTAGRAM_REDIRECT_URI'),
@@ -25,8 +24,7 @@ export class InstagramProvider implements SocialPlatformProvider {
     return url.href;
   }
 
-  async connect(code: string)
-  {
+  async connect (code: string) {
     const result = await this.externalApiProvider.json<ShortToken & { data?: ShortToken[] }>('https://api.instagram.com/oauth/access_token', {
       method: 'POST',
       body: new URLSearchParams({
@@ -35,11 +33,15 @@ export class InstagramProvider implements SocialPlatformProvider {
       }),
     });
     const short = result.data?.[0] ?? result;
+
     if (!short.access_token) throw new AppError('upstream', 'Instagram não retornou um token de autorização.');
+
     const granted = typeof short.permissions === 'string' ? short.permissions.split(',').map(scope => scope.trim()) : short.permissions;
+
     if (granted && !scopes.every(scope => granted.includes(scope))) {
       throw new AppError('invalid', 'Autorize o acesso ao perfil e a publicação de conteúdo.');
     }
+
     const token = await this.longToken('/access_token', {
       grant_type: 'ig_exchange_token', client_secret: requiredEnv('INSTAGRAM_APP_SECRET'), access_token: short.access_token,
     });
@@ -47,47 +49,49 @@ export class InstagramProvider implements SocialPlatformProvider {
       this.graphUrl('me', { fields: 'user_id,username,name' }), { headers: this.headers(token.accessToken) },
     );
     const externalId = me.user_id || me.id;
+
     if (!externalId || !me.username) throw new AppError('upstream', 'Instagram não retornou o perfil profissional.');
+
     return { ...token, externalId: String(externalId), handle: me.username, displayName: me.name ?? null, scopes: granted ?? scopes };
   }
 
-  refresh(accessToken: string)
-  {
+  refresh (accessToken: string) {
     return this.longToken('/refresh_access_token', { grant_type: 'ig_refresh_token', access_token: accessToken });
   }
 
-  createVideo(id: string, accessToken: string, videoUrl: string, caption: string)
-  {
+  createVideo (id: string, accessToken: string, videoUrl: string, caption: string) {
     return this.post(id, 'media', accessToken, { media_type: 'REELS', video_url: videoUrl, caption });
   }
 
-  async containerStatus(id: string, accessToken: string): Promise<ContainerStatus>
-  {
+  async containerStatus (id: string, accessToken: string): Promise<ContainerStatus> {
     const { status_code } = await this.externalApiProvider.json<{ status_code: string }>(
       this.graphUrl(encodeURIComponent(id), { fields: 'status_code' }), { headers: this.headers(accessToken) },
     );
+
     if (status_code === 'PUBLISHED') return 'published';
+
     if (status_code === 'FINISHED') return 'ready';
+
     if (['ERROR', 'EXPIRED'].includes(status_code)) return 'failed';
+
     return 'pending';
   }
 
-  publish(id: string, containerId: string, accessToken: string)
-  {
+  publish (id: string, containerId: string, accessToken: string) {
     return this.post(id, 'media_publish', accessToken, { creation_id: containerId });
   }
 
-  private graphUrl(path: string, query: Record<string, string> = {})
-  {
+  private graphUrl (path: string, query: Record<string, string> = {}) {
     const version = requiredEnv('INSTAGRAM_GRAPH_VERSION');
+
     if (!/^v\d+\.\d+$/.test(version)) throw new AppError('unavailable', 'INSTAGRAM_GRAPH_VERSION inválida.');
+
     const url = new URL(graph + '/' + version + '/' + path);
     url.search = new URLSearchParams(query).toString();
     return url;
   }
 
-  private async post(id: string, action: string, accessToken: string, form: Record<string, string>)
-  {
+  private async post (id: string, action: string, accessToken: string, form: Record<string, string>) {
     const result = await this.externalApiProvider.json<{ id?: string }> (
         this.graphUrl(encodeURIComponent(id) + '/' + action), {
         method: 'POST',
@@ -96,20 +100,23 @@ export class InstagramProvider implements SocialPlatformProvider {
       });
     
     if (!result.id) throw new AppError('upstream', 'Instagram não retornou um identificador de mídia.');
+
     return result.id;
   }
 
-  private async longToken(path: string, params: Record<string, string>)
-  {
+  private async longToken (path: string, params: Record<string, string>) {
     const url = new URL(graph + path);
     url.search = new URLSearchParams(params).toString();
     const token = await this.externalApiProvider.json<LongToken>(url);
+
     if (!token.access_token || !Number.isFinite(token.expires_in) || token.expires_in! <= 0) {
       throw new AppError('upstream', 'Instagram não retornou um token de longa duração válido.');
     }
+
     return { accessToken: token.access_token, expiresAt: new Date(Date.now() + token.expires_in! * 1000) };
   }
 
-  private headers(token: string)
-  { return { Authorization: 'Bearer ' + token }; }
+  private headers (token: string) {
+    return { Authorization: 'Bearer ' + token };
+  }
 }

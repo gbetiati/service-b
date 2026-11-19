@@ -17,8 +17,7 @@ export class UploadMediaAssetUseCase {
     private readonly storageProvider: StorageProvider,
   ) {}
 
-  async execute(productId: string, file: Buffer)
-  {
+  async execute (productId: string, file: Buffer) {
     requireRecord(await this.productRepository.findById(productId), 'Produto');
     const image = await this.imageProcessorProvider.normalize(file);
     const asset = MediaAsset.create(this.requestContext.companyId, productId, image.length);

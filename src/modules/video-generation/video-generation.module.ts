@@ -6,6 +6,7 @@ import { ContentModule } from '../content/content.module';
 import { MediaAssetModule } from '../media-asset/media-asset.module';
 import { GenerateVideoUseCase } from './application/use-cases/generate-video.usecase';
 import { GetVideoGenerationStatusUseCase } from './application/use-cases/get-video-generation-status.usecase';
+import { CompleteScriptGenerationUseCase } from './application/use-cases/complete-script-generation.usecase';
 import { CompleteVideoGenerationUseCase } from './application/use-cases/complete-video-generation.usecase';
 import { VideoProvider } from './domain/providers/video.provider';
 import { VideoReviewProvider } from './domain/providers/video-review.provider';
@@ -18,9 +19,9 @@ import { MultimodalVideoReviewProvider } from './infra/providers/multimodal-vide
 @Module({
   imports: [ContentModule, MediaAssetModule, StorageModule, ExternalApiModule, AiModule],
   controllers: [VideoGenerationController],
-  exports: [GenerateVideoUseCase, CompleteVideoGenerationUseCase],
+  exports: [GenerateVideoUseCase, CompleteScriptGenerationUseCase, CompleteVideoGenerationUseCase],
   providers: [
-    GenerateVideoUseCase, GetVideoGenerationStatusUseCase, CompleteVideoGenerationUseCase,
+    GenerateVideoUseCase, GetVideoGenerationStatusUseCase, CompleteScriptGenerationUseCase, CompleteVideoGenerationUseCase,
     { provide: VideoGenerationRepository, useClass: PrismaVideoGenerationRepository },
     { provide: VideoProvider, useClass: CreatomateProvider },
     { provide: VideoReviewProvider, useClass: MultimodalVideoReviewProvider },

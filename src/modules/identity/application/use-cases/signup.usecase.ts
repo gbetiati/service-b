@@ -12,8 +12,7 @@ export class SignupUseCase {
     private readonly sessionTokenProvider: SessionTokenProvider,
   ) {}
 
-  async execute(dto: SignupDto)
-  {
+  async execute (dto: SignupDto) {
     const passwordHash = await this.passwordHasher.hash(dto.password);
     const user = await this.userRepository.createWithCompany(dto.companyName, dto.email.toLowerCase(), passwordHash);
     return { userId: user.id, companyId: user.companyId, accessToken: await this.sessionTokenProvider.sign(user.id, user.companyId) };

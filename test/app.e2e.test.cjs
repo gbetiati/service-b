@@ -6,11 +6,14 @@ const { test } = require('node:test');
 const { ValidationPipe } = require('@nestjs/common');
 const { Test } = require('@nestjs/testing');
 const sharp = require('sharp');
+const { Webhook } = require('standardwebhooks');
 
 test('company onboarding through reviewed and scheduled video publication', { timeout: 70_000 }, async () => {
-  assert.ok(process.env.TEST_DATABASE_URL && process.env.TEST_REDIS_URL, 'Configure TEST_DATABASE_URL and TEST_REDIS_URL with dedicated test instances.');
+  assert.ok(process.env.TEST_DATABASE_URL, 'Configure TEST_DATABASE_URL with a dedicated test instance.');
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.REDIS_URL = process.env.TEST_REDIS_URL;
+  process.env.OPENAI_API_KEY = 'test-key';
+  process.env.OPENAI_MODEL = 'test-model';
+  process.env.OPENAI_WEBHOOK_SECRET = 'whsec_' + Buffer.from(randomUUID()).toString('base64');
   process.env.CREATOMATE_WEBHOOK_SECRET = randomUUID();
   process.env.JWT_SECRET = randomUUID() + randomUUID();
   process.env.SOCIAL_CREDENTIAL_KEY = Buffer.alloc(32, 42).toString('base64');
@@ -22,7 +25,6 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   const { PrismaService } = require('../dist/prisma/prisma.service');
   const { AppErrorFilter } = require('../dist/shared/core/errors/app-error.filter');
   const { ExternalApiProvider } = require('../dist/shared/libs/http/external-api.provider');
-  const { OpenAiService } = require('../dist/shared/libs/ai/open-ai.service');
   const { StorageProvider } = require('../dist/shared/libs/storage/storage.provider');
   const { VideoProvider } = require('../dist/modules/video-generation/domain/providers/video.provider');
   const { VideoReviewProvider } = require('../dist/modules/video-generation/domain/providers/video-review.provider');
@@ -30,12 +32,19 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   const objects = new Map();
   let publishes = 0;
   let renders = 0;
+  let failRender = false;
   let reviews = 0;
   let signalReviewStarted;
   let releaseReview;
-  const reviewStarted = new Promise(resolve => { signalReviewStarted = resolve; });
-  const reviewGate = new Promise(resolve => { releaseReview = resolve; });
+  const reviewStarted = new Promise(resolve => {
+    signalReviewStarted = resolve;
+  });
+  const reviewGate = new Promise(resolve => {
+    releaseReview = resolve;
+  });
   let scripts = 0;
+  let scriptRequests = 0;
+  const scriptResponses = new Map();
   const module = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(StorageProvider).useValue({
       put: async (key, body) => {
@@ -43,18 +52,26 @@ test('company onboarding through reviewed and scheduled video publication', { ti
         for await (const chunk of Buffer.isBuffer(body) ? [body] : body) chunks.push(chunk);
         objects.set(key, Buffer.concat(chunks));
       },
+
       open: async key => Readable.from([objects.get(key)]),
+
       url: async key => 'https://storage.invalid/' + key,
-      remove: async key => { objects.delete(key); },
+
+      remove: async key => {
+        objects.delete(key);
+      },
     })
-    .overrideProvider(OpenAiService).useValue({ complete: async () => { scripts++; return 'Roteiro criado pela IA.'; } })
     .overrideProvider(VideoProvider).useValue({
       render: async input => {
         renders++;
         assert.equal(input.script, 'Roteiro criado pela IA.');
         assert.equal(input.imageUrls.length, 1);
+
+        if (failRender) throw new Error('Render indisponível no teste.');
+
         return randomUUID();
       },
+
       download: async () => Readable.from([Buffer.from('test mp4')]),
     })
     .overrideProvider(VideoReviewProvider).useValue({
@@ -73,30 +90,62 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     .overrideProvider(ExternalApiProvider).useValue({
       json: async (address, request) => {
         const url = new URL(address);
+
+        if (url.hostname === 'api.openai.com') {
+          assert.equal(request.headers.Authorization, 'Bearer test-key');
+
+          if (url.pathname === '/v1/chat/completions') {
+            scripts++;
+            return { choices: [{ message: { content: 'Roteiro criado pela IA.' } }] };
+          }
+
+          if (url.pathname === '/v1/responses' && request.method === 'POST') {
+            const payload = JSON.parse(request.body);
+            assert.equal(payload.background, true);
+            assert.equal(payload.store, true);
+            assert.equal(JSON.parse(payload.input).brand, 'Marca A');
+            const id = 'resp_' + ++scriptRequests;
+            const response = { id, metadata: payload.metadata, status: 'queued' };
+            scriptResponses.set(id, response);
+            return response;
+          }
+
+          const response = scriptResponses.get(url.pathname.split('/').pop());
+          assert.ok(response, 'Resposta de roteiro desconhecida.');
+          return response;
+        }
+
         if (url.hostname === 'api.instagram.com') {
           assert.equal(request.body.get('code'), 'accepted-code');
           return { data: [{ access_token: 'short-lived', permissions: 'instagram_business_basic,instagram_business_content_publish' }] };
         }
+
         if (url.pathname === '/access_token') return { access_token: 'instagram-long-token', expires_in: 86400 };
+
         assert.equal(request.headers.Authorization, 'Bearer instagram-long-token');
+
         if (url.pathname.endsWith('/me')) return { user_id: 'test-profile', username: 'test_business' };
+
         if (url.pathname.endsWith('/media')) {
           assert.equal(request.body.get('media_type'), 'REELS');
           assert.equal(request.body.get('caption'), 'Legenda de catálogo');
           return { id: 'test-container' };
         }
+
         if (url.pathname.endsWith('/test-container')) return { status_code: 'FINISHED' };
+
         if (url.pathname.endsWith('/media_publish')) {
           assert.equal(request.body.get('creation_id'), 'test-container');
           publishes++;
           return { id: 'test-reel' };
         }
+
         throw new Error('Unexpected Instagram endpoint: ' + url.pathname);
       },
     })
     .compile();
 
-  const app = module.createNestApplication();
+  const app = module.createNestApplication({ rawBody: true });
   const db = app.get(PrismaService);
   const companies = [];
   try {
@@ -105,14 +154,18 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     await app.listen(0, '127.0.0.1');
     const base = await app.getUrl();
 
-    async function request(route, { method = 'GET', token, body, cookie, status = 200 } = {}) {
-      const headers = {};
+    async function request (route, { method = 'GET', token, body, cookie, status = 200, headers = {} } = {}) {
+      headers = { ...headers };
+
       if (token) headers.Authorization = 'Bearer ' + token;
+
       if (cookie) headers.Cookie = cookie;
+
       if (body && !(body instanceof FormData)) {
         headers['Content-Type'] = 'application/json';
         body = JSON.stringify(body);
       }
+
       const response = await fetch(base + route, { method, headers, body });
       const responseBody = await response.text();
       const data = responseBody ? JSON.parse(responseBody) : undefined;
@@ -121,11 +174,31 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     }
 
     const post = async (route, token, body, status = 201) => (await request(route, { method: 'POST', token, body, status })).data;
+
     const get = async (route, token, status = 200) => (await request(route, { token, status })).data;
-    async function poll(read, done) {
+
+    function deliverScriptWebhook (body, valid = true) {
+      const webhookId = 'msg_' + randomUUID();
+      const timestamp = new Date();
+      const webhook = new Webhook(process.env.OPENAI_WEBHOOK_SECRET);
+      const signature = webhook.sign(webhookId, timestamp, JSON.stringify(body));
+
+      return request('/webhooks/openai', {
+        method: 'POST', body, status: valid ? 204 : 401,
+        headers: {
+          'webhook-id': webhookId,
+          'webhook-timestamp': String(Math.floor(timestamp.getTime() / 1000)),
+          'webhook-signature': valid ? signature : 'v1,invalid',
+        },
+      });
+    }
+
+    async function poll (read, done) {
       for (let attempt = 0; attempt < 80; attempt++) {
         const value = await read();
+
         if (done(value)) return value;
+
         await delay(300);
       }
       assert.fail('Expected background job state was not reached');
@@ -173,7 +246,9 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     });
     assert.equal(content.aiScript, 'Roteiro criado pela IA.');
     await get('/contents/' + content.id, other, 404);
+
     const patch = body => request('/contents/' + content.id, { method: 'PATCH', token, ...body });
+
     const changed = await patch({ body: { revision: 1, aiScript: 'Roteiro revisado.' } });
     assert.equal(changed.data.revision, 2);
     await patch({ body: { revision: 1, aiScript: 'Obsoleto' }, status: 409 });
@@ -205,11 +280,33 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     await get('/publications/' + publication.id, other, 404);
     await patch({ body: { revision: 2, aiScript: 'Mudança durante agendamento' }, status: 409 });
 
+    const awaitingScript = await poll(
+      () => db.videoGeneration.findFirst({ where: { contentId: content.id, revision: 2 } }),
+      value => value?.status === 'SCRIPT_GENERATING',
+    );
+    assert.equal(scripts, 1);
+    assert.equal(scriptRequests, 1);
+    assert.equal(renders, 0);
+    assert.equal((await get('/contents/' + content.id, token)).aiScript, 'Roteiro revisado.');
+
+    const response = scriptResponses.get('resp_1');
+    assert.equal(response.metadata.script_submission_id, awaitingScript.scriptSubmissionId);
+    response.status = 'completed';
+    response.output = [
+      { type: 'message', content: [{ type: 'output_text', text: 'Roteiro criado pela IA.' }] },
+    ];
+    const scriptEvent = { type: 'response.completed', data: { id: response.id } };
+    await deliverScriptWebhook(scriptEvent, false);
+    assert.equal((await get('/video-generations/' + awaitingScript.id, token)).status, 'SCRIPT_GENERATING');
+    await deliverScriptWebhook(scriptEvent);
+    await deliverScriptWebhook(scriptEvent);
+
     const generation = await poll(
       () => db.videoGeneration.findFirst({ where: { contentId: content.id, revision: 2 } }),
       value => value?.status === 'RENDERING',
     );
-    assert.equal(scripts, 2);
+    assert.equal(scripts, 1);
+    assert.equal(scriptRequests, 1);
     assert.equal(renders, 1);
     assert.equal((await get('/contents/' + content.id, token)).aiScript, 'Roteiro criado pela IA.');
     await get('/video-generations/' + generation.id, other, 404);
@@ -249,11 +346,118 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     await post('/publications', token, {
       contentId: content.id, videoId: render.video.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
     }, 409);
+
+    const pendingRender = await db.videoGeneration.create({
+      data: { companyId: a.companyId, contentId: content.id, revision: 3, input: generation.input },
+    });
+    failRender = true;
+    const pendingPublication = await post('/publications', token, {
+      contentId: content.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const failedPublication = await poll(
+      () => get('/publications/' + pendingPublication.id, token), value => value.status === 'FAILED',
+    );
+    assert.equal(failedPublication.error, 'Não foi possível solicitar o render.');
+    assert.equal((await get('/video-generations/' + pendingRender.id, token)).status, 'FAILED');
+    assert.equal(renders, 2);
+    assert.equal(scripts, 1);
+    assert.equal(scriptRequests, 1);
+
+    await patch({ body: { revision: 3, aiScript: 'Roteiro da revisão seguinte.' } });
+    const scriptFailurePublication = await post('/publications', token, {
+      contentId: content.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const failedScriptGeneration = await poll(
+      () => db.videoGeneration.findFirst({ where: { contentId: content.id, revision: 4 } }),
+      value => value?.status === 'SCRIPT_GENERATING',
+    );
+    const failedResponse = scriptResponses.get('resp_2');
+    assert.equal(failedResponse.metadata.script_submission_id, failedScriptGeneration.scriptSubmissionId);
+    failedResponse.status = 'failed';
+    await deliverScriptWebhook({ type: 'response.failed', data: { id: failedResponse.id } });
+    const rejected = await poll(
+      () => get('/publications/' + scriptFailurePublication.id, token), value => value.status === 'FAILED',
+    );
+    assert.match(rejected.error, /roteiro|renderizar/);
+    assert.equal(renders, 2);
+    assert.equal(publishes, 1);
   } finally {
     if (companies.length) {
       await db.company.deleteMany({ where: { id: { in: companies } } }).finally(() => app.close());
     } else {
       await app.close();
+    }
+  }
+});
+
+test('publication repository claims one worker at a time and preserves a concurrent render callback', async () => {
+  const { PrismaService }= require('../dist/prisma/prisma.service');
+  const { RequestContext } = require('../dist/shared/core/request-context/request-context');
+  const { PrismaPublicationRepository } = require('../dist/modules/publication/infra/prisma/publication.prisma-repository');
+  const { CLAIM_LEASE_MS, PUBLICATION_GRACE_MS } = require('../dist/modules/publication/domain/entities/publication-timing');
+  assert.ok(process.env.TEST_DATABASE_URL, 'Configure TEST_DATABASE_URL with a dedicated test instance.');
+  const db = new PrismaService({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const repository = new PrismaPublicationRepository(db, new RequestContext());
+  let companyId;
+
+  try {
+    ({ id: companyId } = await db.company.create({ data: { name: 'Publication lease test' } }));
+    const brand = await db.brand.create({ data: { companyId, name: 'Marca' } });
+    const campaign = await db.campaign.create({ data: { companyId, brandId: brand.id, name: 'Campanha' } });
+    const rules = await db.campaignRules.create({
+      data: { companyId, campaingId: campaign.id, name: 'Regra', guidelines: 'Use fotos reais.' },
+    });
+    const product = await db.product.create({ data: { companyId, brandId: brand.id, name: 'Produto' } });
+    const content = await db.content.create({
+      data: { companyId, campaingId: campaign.id, campaingRulesId: rules.id, productId: product.id, aiScript: 'Roteiro.' },
+    });
+    const account = await db.socialAccount.create({
+      data: { companyId, platform: 'INSTAGRAM', accountHandle: 'test', externalId: randomUUID() },
+    });
+
+    const start = Date.now();
+    const publication = await repository.save({
+      companyId, contentId: content.id, socialAccountId: account.id,
+      date: new Date(start + 60_000), nextAttemptAt: new Date(start - 1000),
+    });
+    const claims = await Promise.all([repository.claim(publication.id), repository.claim(publication.id)]);
+    assert.equal(claims.filter(Boolean).length, 1);
+    const originalClaim = claims.find(Boolean);
+    assert.ok(originalClaim.leaseUntil.getTime() >= start + CLAIM_LEASE_MS);
+    assert.equal(await repository.claim(publication.id), null);
+
+    await db.publication.update({ where: { id: publication.id }, data: { leaseUntil: new Date(start - 1) } });
+    await delay(2);
+    const reclaim = await repository.claim(publication.id);
+    assert.ok(reclaim);
+    await repository.defer(originalClaim, 'stale-worker');
+    const stillOwned = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
+    assert.equal(stillOwned.containerId, null);
+    assert.deepEqual(stillOwned.leaseUntil, reclaim.leaseUntil);
+
+    const deadline = new Date(publication.schedule.date.getTime() + PUBLICATION_GRACE_MS);
+    await repository.resumeForContent(companyId, content.id, content.revision + 1);
+    await repository.waitForVideo(reclaim, deadline);
+    const waiting = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
+    assert.deepEqual(waiting.nextAttemptAt, deadline);
+    assert.equal(waiting.leaseUntil, null);
+    assert.equal(await repository.claim(publication.id), null);
+
+    await repository.resumeForContent(companyId, content.id, content.revision);
+    const woken = await repository.claim(publication.id);
+    assert.ok(woken);
+    await repository.resumeForContent(companyId, content.id, content.revision);
+    await repository.waitForVideo(woken, deadline);
+
+    const resumed = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
+    assert.ok(resumed.nextAttemptAt.getTime() <= Date.now());
+    assert.equal(resumed.leaseUntil, null);
+    assert.ok(await repository.claim(publication.id));
+  } finally {
+    try {
+      if (companyId) await db.company.delete({ where: { id: companyId } });
+    } finally {
+      await db.$disconnect();
     }
   }
 });

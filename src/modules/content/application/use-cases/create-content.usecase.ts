@@ -16,7 +16,7 @@ export class CreateContentUseCase {
     private readonly scriptProvider: ScriptProvider,
   ) { }
 
-  async execute(dto: CreateContentDto) {
+  async execute (dto: CreateContentDto) {
     const content = Content.create(this.requestContext.companyId, {
       campaingId: dto.campaingId, campaingRulesId: dto.campaingRulesId, productId: dto.productId,
       productIds: dto.productIds ?? [], aiScript: dto.aiScript ?? '', editorial: dto.editorial ?? {},

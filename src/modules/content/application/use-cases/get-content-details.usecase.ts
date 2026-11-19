@@ -7,6 +7,8 @@ export class GetContentDetailsUseCase {
   constructor(
     private readonly contentRepository: ContentRepository,
   ) {}
-  async execute(id: string)
-  { return requireRecord(await this.contentRepository.findById(id), 'Conteúdo'); }
+
+  async execute (id: string) {
+    return requireRecord(await this.contentRepository.findById(id), 'Conteúdo');
+  }
 }

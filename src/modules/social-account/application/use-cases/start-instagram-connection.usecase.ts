@@ -10,8 +10,7 @@ export class StartInstagramConnectionUseCase {
     private readonly socialAccountRepository: SocialAccountRepository,
   ) {}
 
-  async execute()
-  {
+  async execute () {
     const state = randomBytes(32).toString('base64url');
     const nonce = randomBytes(32).toString('base64url');
     const authorizationUrl = this.socialPlatformProvider.authorizationUrl(state);

@@ -12,24 +12,22 @@ export class PrismaCampaignRulesRepository implements CampaignRulesRepository {
     private readonly requestContext: RequestContext,
   ) {}
 
-  async create(entity: CampaignRules)
-  {
+  async create (entity: CampaignRules) {
     const row = await this.prismaService.campaignRules.create({ data: { ...entity, companyId: this.requestContext.companyId } });
     return this.toDomain(row);
   }
-  async findById(id: string)
-  {
+
+  async findById (id: string) {
     const row = await this.prismaService.campaignRules.findUnique({ where: { companyId_id: { id, companyId: this.requestContext.companyId } } });
     return row && this.toDomain(row);
   }
-  async findAll()
-  {
+
+  async findAll () {
     const rows = await this.prismaService.campaignRules.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
   }
 
-  private toDomain(row: Row)
-  {
+  private toDomain (row: Row) {
     return new CampaignRules(row.id, row.companyId, row.name, row.createdAt, row.updatedAt, row.campaingId, row.guidelines);
   }
 }

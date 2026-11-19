@@ -14,7 +14,7 @@ Para Cloudflare R2, use `S3_REGION=auto`, configure `S3_ENDPOINT` com o endpoint
 
 ## API
 
-As rotas abaixo usam `Authorization: Bearer <accessToken>`. As rotas de cadastro, login e callback do Instagram são públicas. O webhook do Creatomate usa um segredo próprio.
+As rotas abaixo usam `Authorization: Bearer <accessToken>`. As rotas de cadastro, login e callback do Instagram são públicas. Os webhooks da OpenAI e do Creatomate usam a autenticação de cada provedor.
 
 | Método e rota | Uso |
 | --- | --- |
@@ -38,6 +38,7 @@ As rotas abaixo usam `Authorization: Bearer <accessToken>`. As rotas de cadastro
 | `GET /social-accounts` | Lista as contas conectadas |
 | `POST /social-accounts/:id/instagram/refresh` | Renova a credencial do Instagram antes do vencimento |
 | `POST /publications` | Agenda um Reel com `contentId`, `socialAccountId`, `date` ISO 8601 com fuso e `caption` opcional. Aceita `videoId` para usar um vídeo já aprovado da revisão atual |
+| `POST /webhooks/openai` | Recebe o evento assinado de conclusão ou falha do roteiro |
 | `POST /webhooks/creatomate` | Recebe a conclusão do render usando o segredo do webhook |
 | `GET /publications/:id` | Consulta o status do agendamento e da publicação |
 
@@ -45,17 +46,19 @@ Cadastros de marca, campanha, regra, categoria e produto também têm consulta p
 
 ## Integrações
 
-- **OpenAI.** Configure um modelo que aceite imagens e respostas JSON. Se `aiScript` for omitido no cadastro, o backend gera o roteiro com os dados da marca, campanha e produtos.
+- **OpenAI.** Configure em `OPENAI_MODEL` um modelo que aceite Responses API em background, imagens e respostas JSON. No projeto da chave `OPENAI_API_KEY`, cadastre a URL HTTPS `/webhooks/openai` e assine os eventos `response.completed`, `response.failed`, `response.incomplete` e `response.cancelled`. Copie o segredo gerado pelo painel para `OPENAI_WEBHOOK_SECRET`. Se `aiScript` for omitido no cadastro manual de conteúdo, o backend ainda gera o roteiro na própria chamada. [Webhooks da OpenAI](https://developers.openai.com/api/docs/guides/webhooks)
 - **Creatomate.** Configure o template e os nomes dos campos dinâmicos. A API passa o roteiro e as fotos na ordem informada. Configure `CREATOMATE_WEBHOOK_URL` com a URL HTTPS do endpoint e gere `CREATOMATE_WEBHOOK_SECRET` com `openssl rand -hex 32`. O webhook informa a conclusão do render e o MP4 é transferido por streaming para o bucket. Um adaptador independente usa FFmpeg, OCR e IA visual para comparar três quadros com as imagens de referência e as regras da campanha. A revisão é amostral.
-- **Instagram.** Use uma conta profissional e configure Instagram Login no painel da Meta. Registre exatamente a URL HTTPS de `INSTAGRAM_REDIRECT_URI`. Inicie a conexão a partir do navegador e abra o `authorizationUrl` no mesmo navegador. Em um frontend de outra origem do mesmo site, configure `CORS_ORIGIN` e faça a requisição com `credentials: "include"` para receber o cookie. O callback valida um estado de uso único vinculado a esse cookie e salva o token de longa duração criptografado. O worker usa a única fila BullMQ, `publication-schedule`, para criar o contêiner do Reel e publicar quando o Instagram o liberar. [Login e permissões da Meta](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login) · [Publicação de conteúdo](https://developers.facebook.com/documentation/instagram-platform/content-publishing)
+- **Instagram.** Use uma conta profissional e configure Instagram Login no painel da Meta. Registre exatamente a URL HTTPS de `INSTAGRAM_REDIRECT_URI`. Inicie a conexão a partir do navegador e abra o `authorizationUrl` no mesmo navegador. Em um frontend de outra origem do mesmo site, configure `CORS_ORIGIN` e faça a requisição com `credentials: "include"` para receber o cookie. O callback valida um estado de uso único vinculado a esse cookie e salva o token de longa duração criptografado. O orquestrador prepara o contêiner do Reel e publica quando o Instagram o liberar a partir do horário programado. [Login e permissões da Meta](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login) · [Publicação de conteúdo](https://developers.facebook.com/documentation/instagram-platform/content-publishing)
 - **Embeddings.** A migração instala pgvector e prepara uma coluna `vector(1536)`. Gerar embeddings e oferecer busca semântica são etapas posteriores.
 
 ## Publicação agendada
 
-Ao agendar sem `videoId`, a fila `publication-schedule` inicia a preparação cinco minutos antes do horário (ou assim que possível para agendamentos com menos de cinco minutos de antecedência). O orquestrador valida a conta, resolve o contexto editorial, gera o roteiro e solicita o render da revisão atual. Uma renderização da mesma revisão que já esteja em andamento ou tenha sido concluída é reutilizada.
+O cron consulta o PostgreSQL a cada cinco segundos e chama o orquestrador para os agendamentos com `nextAttemptAt` vencido. A reserva no banco coordena o processamento entre instâncias. Ao agendar sem `videoId`, a primeira tentativa de preparação fica marcada para cinco minutos antes, ou assim que possível para agendamentos mais próximos.
 
-O webhook processa o resultado diretamente. Ele baixa o MP4, roda a revisão automática e, se o vídeo for aprovado, marca o conteúdo como `READY` e libera a publicação agendada. O endpoint responde `204` após concluir o processamento. Uma entrega concorrente recebe `503` enquanto o resultado estiver em processamento, e uma entrega repetida após a conclusão recebe `204`. O orquestrador pode preparar o container do Instagram antes do horário e publica o Reel a partir da data agendada. Se o vídeo ou o container atrasar, o fluxo tem até 30 minutos após o horário para publicar.
+O orquestrador valida a conta, resolve o contexto editorial e solicita o roteiro em background. O webhook da OpenAI confirma o resultado, salva o roteiro e libera a próxima tentativa para enviar ao Creatomate. O webhook do Creatomate baixa o MP4, roda a revisão e, se aprovado, marca o conteúdo como `READY` e libera a etapa de publicação. A geração existente da revisão atual é reaproveitada, e callbacks duplicados são tratados pelo estado persistido.
+
+O Instagram pode preparar o container antes da data agendada. A publicação ocorre a partir do horário escolhido, com até 30 minutos para concluir em caso de atraso.
 
 ## Testes
 
-A suíte usa PostgreSQL com pgvector e Redis dedicados, com adaptadores de teste para storage, IA, render e Instagram. Aponte `TEST_DATABASE_URL` e `TEST_REDIS_URL` para essas instâncias, aplique a migração com `DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate` e execute `npm test`.
+A suíte usa um PostgreSQL com pgvector dedicado e simula storage, OpenAI, Creatomate e Instagram. Aponte `TEST_DATABASE_URL` para essa instância, aplique as migrações com `DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate` e execute `npm test`.

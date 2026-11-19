@@ -12,10 +12,11 @@ export class UpdateContentUseCase {
     private readonly contentCatalogService: ContentCatalogService,
   ) {}
 
-  async execute(id: string, dto: UpdateContentDto)
-  {
+  async execute (id: string, dto: UpdateContentDto) {
     const current = requireRecord(await this.contentRepository.findById(id), 'Conteúdo');
+
     if (dto.revision !== current.revision) throw new AppError('conflict', 'A revisão informada está desatualizada.');
+
     const fields = current.fields;
     const content = current.revise({
       campaingId: dto.campaingId ?? fields.campaingId, campaingRulesId: dto.campaingRulesId ?? fields.campaingRulesId,

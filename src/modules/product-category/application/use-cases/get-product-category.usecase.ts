@@ -7,6 +7,8 @@ export class GetProductCategoryUseCase {
   constructor(
     private readonly productCategoryRepository: ProductCategoryRepository,
   ) {}
-  async execute(id: string)
-  { return requireRecord(await this.productCategoryRepository.findById(id), 'ProductCategory'); }
+
+  async execute (id: string) {
+    return requireRecord(await this.productCategoryRepository.findById(id), 'ProductCategory');
+  }
 }

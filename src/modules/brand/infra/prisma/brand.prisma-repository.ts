@@ -12,24 +12,22 @@ export class PrismaBrandRepository implements BrandRepository {
     private readonly requestContext: RequestContext,
   ) {}
 
-  async create(entity: Brand)
-  {
+  async create (entity: Brand) {
     const row = await this.prismaService.brand.create({ data: { ...entity, companyId: this.requestContext.companyId } });
     return this.toDomain(row);
   }
-  async findById(id: string)
-  {
+
+  async findById (id: string) {
     const row = await this.prismaService.brand.findUnique({ where: { companyId_id: { id, companyId: this.requestContext.companyId } } });
     return row && this.toDomain(row);
   }
-  async findAll()
-  {
+
+  async findAll () {
     const rows = await this.prismaService.brand.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
   }
 
-  private toDomain(row: Row)
-  {
+  private toDomain (row: Row) {
     return new Brand(row.id, row.companyId, row.name, row.createdAt, row.updatedAt);
   }
 }

@@ -7,6 +7,8 @@ export class GetBrandUseCase {
   constructor(
     private readonly brandRepository: BrandRepository,
   ) {}
-  async execute(id: string)
-  { return requireRecord(await this.brandRepository.findById(id), 'Brand'); }
+
+  async execute (id: string) {
+    return requireRecord(await this.brandRepository.findById(id), 'Brand');
+  }
 }

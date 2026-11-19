@@ -8,8 +8,8 @@ export class GetContentHistoryUseCase {
   constructor(
     private readonly contentRepository: ContentRepository,
   ) {}
-  async execute(id: string, page: ContentPageDto)
-  {
+
+  async execute (id: string, page: ContentPageDto) {
     requireRecord(await this.contentRepository.findById(id), 'Conteúdo');
     return this.contentRepository.findHistory(id, page.offset, page.limit);
   }

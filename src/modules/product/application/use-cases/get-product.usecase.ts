@@ -7,6 +7,8 @@ export class GetProductUseCase {
   constructor(
     private readonly productRepository: ProductRepository,
   ) {}
-  async execute(id: string)
-  { return requireRecord(await this.productRepository.findById(id), 'Product'); }
+
+  async execute (id: string) {
+    return requireRecord(await this.productRepository.findById(id), 'Product');
+  }
 }

@@ -12,24 +12,22 @@ export class PrismaCampaignRepository implements CampaignRepository {
     private readonly requestContext: RequestContext,
   ) {}
 
-  async create(entity: Campaign)
-  {
+  async create (entity: Campaign) {
     const row = await this.prismaService.campaign.create({ data: { ...entity, companyId: this.requestContext.companyId } });
     return this.toDomain(row);
   }
-  async findById(id: string)
-  {
+
+  async findById (id: string) {
     const row = await this.prismaService.campaign.findUnique({ where: { companyId_id: { id, companyId: this.requestContext.companyId } } });
     return row && this.toDomain(row);
   }
-  async findAll()
-  {
+
+  async findAll () {
     const rows = await this.prismaService.campaign.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
   }
 
-  private toDomain(row: Row)
-  {
+  private toDomain (row: Row) {
     return new Campaign(row.id, row.companyId, row.name, row.createdAt, row.updatedAt, row.brandId, row.objective);
   }
 }

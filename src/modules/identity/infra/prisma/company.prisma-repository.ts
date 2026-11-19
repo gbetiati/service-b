@@ -10,8 +10,8 @@ export class PrismaCompanyRepository implements CompanyRepository {
     private readonly prismaService: PrismaService,
     private readonly requestContext: RequestContext,
   ) {}
-  async findCurrent()
-  {
+
+  async findCurrent () {
     const row = await this.prismaService.company.findUnique({ where: { id: this.requestContext.companyId } });
     return row && new Company(row.id, row.name, row.createdAt, row.updatedAt);
   }

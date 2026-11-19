@@ -12,8 +12,7 @@ export class MediaAsset {
     readonly updatedAt: Date,
   ) {}
 
-  static create(companyId: string, productId: string, bytes: number)
-  {
+  static create (companyId: string, productId: string, bytes: number) {
     const id = randomUUID();
     const now = new Date();
     return new MediaAsset(id, companyId, productId, `${companyId}/products/${productId}/${id}.jpg`, 'image/jpeg', bytes, now, now);

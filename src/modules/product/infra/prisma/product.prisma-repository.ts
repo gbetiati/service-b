@@ -12,24 +12,22 @@ export class PrismaProductRepository implements ProductRepository {
     private readonly requestContext: RequestContext,
   ) {}
 
-  async create(entity: Product)
-  {
+  async create (entity: Product) {
     const row = await this.prismaService.product.create({ data: { ...entity, companyId: this.requestContext.companyId } });
     return this.toDomain(row);
   }
-  async findById(id: string)
-  {
+
+  async findById (id: string) {
     const row = await this.prismaService.product.findUnique({ where: { companyId_id: { id, companyId: this.requestContext.companyId } } });
     return row && this.toDomain(row);
   }
-  async findAll()
-  {
+
+  async findAll () {
     const rows = await this.prismaService.product.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
   }
 
-  private toDomain(row: Row)
-  {
+  private toDomain (row: Row) {
     return new Product(row.id, row.companyId, row.name, row.createdAt, row.updatedAt, row.brandId, row.categoryId, row.description);
   }
 }

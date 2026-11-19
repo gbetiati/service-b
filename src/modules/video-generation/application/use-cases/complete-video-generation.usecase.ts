@@ -14,12 +14,15 @@ export class CompleteVideoGenerationUseCase {
     private readonly storageProvider: StorageProvider,
   ) {}
 
-  async execute(notification: RenderNotification)
-  {
+  async execute (notification: RenderNotification) {
     const result = await this.videoGenerationRepository.claimCompletion(notification);
+
     if (!result) return null;
+
     const { generation, claimed } = result;
+
     if (!claimed) return generation;
+
     const { outcome } = notification;
 
     try {
@@ -33,6 +36,7 @@ export class CompleteVideoGenerationUseCase {
         const review = await this.videoReviewProvider.review(await this.storageProvider.open(key), input, references);
         await this.videoGenerationRepository.complete(generation, new VideoAsset(id, companyId, contentId, id, revision, key, review));
       }
+
       return generation;
     } catch (error) {
       await this.videoGenerationRepository.release(generation);

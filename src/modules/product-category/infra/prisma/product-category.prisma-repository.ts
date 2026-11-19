@@ -12,24 +12,22 @@ export class PrismaProductCategoryRepository implements ProductCategoryRepositor
     private readonly requestContext: RequestContext,
   ) {}
 
-  async create(entity: ProductCategory)
-  {
+  async create (entity: ProductCategory) {
     const row = await this.prismaService.productCategory.create({ data: { ...entity, companyId: this.requestContext.companyId } });
     return this.toDomain(row);
   }
-  async findById(id: string)
-  {
+
+  async findById (id: string) {
     const row = await this.prismaService.productCategory.findUnique({ where: { companyId_id: { id, companyId: this.requestContext.companyId } } });
     return row && this.toDomain(row);
   }
-  async findAll()
-  {
+
+  async findAll () {
     const rows = await this.prismaService.productCategory.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
   }
 
-  private toDomain(row: Row)
-  {
+  private toDomain (row: Row) {
     return new ProductCategory(row.id, row.companyId, row.name, row.createdAt, row.updatedAt);
   }
 }

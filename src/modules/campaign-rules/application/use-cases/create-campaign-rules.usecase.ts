@@ -14,8 +14,7 @@ export class CreateCampaignRulesUseCase {
     private readonly campaignRepository: CampaignRepository,
   ) {}
 
-  async execute(dto: CreateCampaignRulesDto)
-  {
+  async execute (dto: CreateCampaignRulesDto) {
     requireRecord(await this.campaignRepository.findById(dto.campaingId), 'Campanha');
     const entity = CampaignRules.create(this.requestContext.companyId, dto.name, dto.campaingId, dto.guidelines);
     return this.campaignRulesRepository.create(entity);

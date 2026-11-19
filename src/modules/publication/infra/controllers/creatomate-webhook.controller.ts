@@ -3,17 +3,17 @@ import { Body, Controller, HttpCode, Post, Query } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
-import { OrchestratePublicationUseCase } from '../../application/use-cases/orchestrate-publication.usecase';
+import { HandleVideoRenderCompletedUseCase } from '../../application/use-cases/handle-video-render-completed.usecase';
 
 @Controller('webhooks/creatomate')
 export class CreatomateWebhookController {
   constructor(
-    private readonly orchestratePublicationUseCase: OrchestratePublicationUseCase,
+    private readonly handleVideoRenderCompletedUseCase: HandleVideoRenderCompletedUseCase,
   ) {}
 
   @Post()
   @HttpCode(204)
-  async receive(@Query('token') token: unknown, @Body() body: Record<string, unknown>) {
+  async receive (@Query('token') token: unknown, @Body() body: Record<string, unknown>) {
     
     const expected = Buffer.from(requiredEnv('CREATOMATE_WEBHOOK_SECRET'));
     const received = Buffer.from(typeof token === 'string' ? token : '');
@@ -33,10 +33,11 @@ export class CreatomateWebhookController {
     const render = { submissionId: metadata, providerId: id };
     
     if (status === 'failed') {
-      return this.orchestratePublicationUseCase.renderCompleted({ ...render, outcome: { state: 'failed' } });
+      return this.handleVideoRenderCompletedUseCase.execute({ ...render, outcome: { state: 'failed' } });
     }
 
     if (typeof url !== 'string' || !url) throw new AppError('invalid', 'Webhook sem a URL do vídeo.');
-    await this.orchestratePublicationUseCase.renderCompleted({ ...render, outcome: { state: 'ready', url } });
+
+    await this.handleVideoRenderCompletedUseCase.execute({ ...render, outcome: { state: 'ready', url } });
   }
 }

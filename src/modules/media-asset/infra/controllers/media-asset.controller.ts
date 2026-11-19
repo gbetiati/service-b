@@ -17,17 +17,17 @@ export class MediaAssetController {
 
   @Post('products/:id/media')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0 } }))
-  upload(@Param('id', ParseUUIDPipe) id: string, @UploadedFile(new ParseFilePipeBuilder().build()) file: Express.Multer.File) {
+  upload (@Param('id', ParseUUIDPipe) id: string, @UploadedFile(new ParseFilePipeBuilder().build()) file: Express.Multer.File) {
     return this.uploadMediaAssetUseCase.execute(id, file.buffer);
   }
 
   @Get('products/:id/media')
-  list(@Param('id', ParseUUIDPipe) id: string) {
+  list (@Param('id', ParseUUIDPipe) id: string) {
     return this.listMediaAssetsUseCase.execute(id);
   }
 
   @Get('media-assets/:id/url')
-  getUrl(@Param('id', ParseUUIDPipe) id: string) {
+  getUrl (@Param('id', ParseUUIDPipe) id: string) {
     return this.getMediaAssetUrlUseCase.execute(id);
   }
 }

@@ -6,6 +6,8 @@ export class ListSocialAccountsUseCase {
   constructor(
     private readonly socialAccountRepository: SocialAccountRepository,
   ) {}
-  execute()
-  { return this.socialAccountRepository.findAll(); }
+
+  execute () {
+    return this.socialAccountRepository.findAll();
+  }
 }

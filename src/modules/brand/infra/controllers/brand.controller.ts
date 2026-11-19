@@ -16,17 +16,17 @@ export class BrandController {
   ) { }
 
   @Post()
-  create(@Body() dto: CreateBrandDto) {
+  create (@Body() dto: CreateBrandDto) {
     return this.createBrandUseCase.execute(dto);
   }
 
   @Get()
-  list() {
+  list () {
     return this.listBrandUseCase.execute();
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
+  get (@Param('id', ParseUUIDPipe) id: string) {
     return this.getBrandUseCase.execute(id);
   }
 }

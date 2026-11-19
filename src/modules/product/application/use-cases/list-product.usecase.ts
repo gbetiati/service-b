@@ -6,6 +6,8 @@ export class ListProductUseCase {
   constructor(
     private readonly productRepository: ProductRepository,
   ) {}
-  execute()
-  { return this.productRepository.findAll(); }
+
+  execute () {
+    return this.productRepository.findAll();
+  }
 }

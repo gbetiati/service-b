@@ -21,8 +21,7 @@ export class PrismaContentRepository implements ContentRepository {
     private readonly requestContext: RequestContext,
   ) {}
 
-  create(content: Content)
-  {
+  create (content: Content) {
     const { id } = content;
     const companyId = this.requestContext.companyId;
     return this.prismaService.$transaction(async tx => {
@@ -31,19 +30,22 @@ export class PrismaContentRepository implements ContentRepository {
     });
   }
 
-  update(content: Content)
-  {
+  update (content: Content) {
     const { id, revision } = content;
     const companyId = this.requestContext.companyId;
     return this.prismaService.serializable(async tx => {
       const updated = await tx.content.updateMany({
         where: { companyId, id, revision: revision - 1 }, data: { ...this.fields(content), revision, status: 'WAITING' },
       });
+
       if (!updated.count) throw new AppError('conflict', 'A revisão informada está desatualizada.');
+
       const active = await tx.publication.count({
         where: { companyId, schedule: { contentId: id }, status: { in: ['SCHEDULED', 'PUBLISHING'] } },
       });
+
       if (active) throw new AppError('conflict', 'O conteúdo tem uma publicação em andamento.');
+
       const relations = { companyId, contentId: id };
       await tx.contentAsset.deleteMany({ where: relations });
       await tx.contentProduct.deleteMany({ where: relations });
@@ -54,38 +56,36 @@ export class PrismaContentRepository implements ContentRepository {
     });
   }
 
-  async findById(id: string)
-  {
+  async findById (id: string) {
     const row = await this.prismaService.content.findUnique({ where: { companyId_id: { companyId: this.requestContext.companyId, id } }, include });
     return row && this.toDomain(row);
   }
-  async findAll(skip: number, take: number)
-  {
+
+  async findAll (skip: number, take: number) {
     const rows = await this.prismaService.content.findMany({
       where: { companyId: this.requestContext.companyId }, include, skip, take, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     return rows.map(row => this.toDomain(row));
   }
-  findHistory(contentId: string, skip: number, take: number)
-  {
+
+  findHistory (contentId: string, skip: number, take: number) {
     return this.prismaService.contentHistory.findMany({
       where: { companyId: this.requestContext.companyId, contentId }, select: { revision: true, snapshot: true, createdAt: true },
       orderBy: { revision: 'desc' }, skip, take,
     });
   }
 
-  private fields(content: Content)
-  {
+  private fields (content: Content) {
     const { aiScript, editorial, campaingId, campaingRulesId, productId } = content.fields;
     return { aiScript, editorial, campaingId, campaingRulesId, productId };
   }
-  private relations(content: Content)
-  {
+
+  private relations (content: Content) {
     const { assets, productIds } = content.fields;
     return { assets: { create: assets }, products: { create: productIds.map(productId => ({ productId })) } };
   }
-  private async saveSnapshot(tx: Prisma.TransactionClient, id: string, companyId: string)
-  {
+
+  private async saveSnapshot (tx: Prisma.TransactionClient, id: string, companyId: string) {
     const content = this.toDomain(await tx.content.findUniqueOrThrow({ where: { companyId_id: { id, companyId } }, include }));
     const { createdAt, updatedAt, ...snapshot } = ContentMapper.toResponse(content);
     await tx.contentHistory.create({ data: {
@@ -94,8 +94,8 @@ export class PrismaContentRepository implements ContentRepository {
     } });
     return content;
   }
-  private toDomain(row: Row)
-  {
+
+  private toDomain (row: Row) {
     const { id, companyId, campaingId, campaingRulesId, productId, aiScript, editorial, status, revision, createdAt, updatedAt } = row;
     return new Content(id, companyId, {
       campaingId, campaingRulesId, productId, aiScript, editorial: editorial as Editorial,

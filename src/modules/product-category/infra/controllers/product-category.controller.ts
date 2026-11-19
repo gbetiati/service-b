@@ -16,17 +16,17 @@ export class ProductCategoryController {
   ) {}
 
   @Post()
-  create(@Body() dto: CreateProductCategoryDto) {
+  create (@Body() dto: CreateProductCategoryDto) {
     return this.createProductCategoryUseCase.execute(dto);
   }
 
   @Get()
-  list() {
+  list () {
     return this.listProductCategoryUseCase.execute();
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
+  get (@Param('id', ParseUUIDPipe) id: string) {
     return this.getProductCategoryUseCase.execute(id);
   }
 }

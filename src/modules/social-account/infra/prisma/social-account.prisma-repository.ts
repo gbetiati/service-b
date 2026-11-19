@@ -15,8 +15,7 @@ export class PrismaSocialAccountRepository implements SocialAccountRepository {
     private readonly requestContext: RequestContext,
   ) {}
 
-  async saveState(hash: string, expiresAt: Date)
-  {
+  async saveState (hash: string, expiresAt: Date) {
     const { userId, companyId } = this.requestContext.identity;
     await this.prismaService.$transaction([
       this.prismaService.oAuthState.deleteMany({ where: { userId, companyId, expiresAt: { lte: new Date() } } }),
@@ -24,18 +23,18 @@ export class PrismaSocialAccountRepository implements SocialAccountRepository {
     ]);
   }
 
-  async consumeState(hash: string)
-  {
+  async consumeState (hash: string) {
     return this.prismaService.$transaction(async tx => {
       const state = await tx.oAuthState.findUnique({ where: { hash } });
+
       if (!state) return null;
+
       const deleted = await tx.oAuthState.deleteMany({ where: { hash, expiresAt: { gt: new Date() } } });
       return deleted.count ? { companyId: state.companyId, userId: state.userId } : null;
     });
   }
 
-  saveInstagram(profile: Omit<ConnectedAccount, 'accessToken'>, token: EncryptedToken)
-  {
+  saveInstagram (profile: Omit<ConnectedAccount, 'accessToken'>, token: EncryptedToken) {
     const companyId = this.requestContext.companyId;
     const identity = { companyId, platform: 'INSTAGRAM' as const, externalId: profile.externalId };
     const account = { accountHandle: profile.handle, displayName: profile.displayName, status: 'ACTIVE' as const };
@@ -52,13 +51,12 @@ export class PrismaSocialAccountRepository implements SocialAccountRepository {
     });
   }
 
-  async findAll()
-  {
+  async findAll () {
     const rows = await this.prismaService.socialAccount.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
   }
-  async credential(socialAccountId: string)
-  {
+
+  async credential (socialAccountId: string) {
     const row = await this.prismaService.socialCredential.findFirst({
       where: { companyId: this.requestContext.companyId, socialAccountId, kind: 'access_token', socialAccount: { status: 'ACTIVE' } },
     });
@@ -67,16 +65,16 @@ export class PrismaSocialAccountRepository implements SocialAccountRepository {
       Array.isArray(row.scopes) ? row.scopes.filter((scope): scope is string => typeof scope === 'string') : [], row.createdAt, row.updatedAt,
     );
   }
-  async updateCredential(current: SocialCredential, update: EncryptedToken & { expiresAt: Date })
-  {
+
+  async updateCredential (current: SocialCredential, update: EncryptedToken & { expiresAt: Date }) {
     const result = await this.prismaService.socialCredential.updateMany({
       where: { id: current.id, companyId: this.requestContext.companyId, updatedAt: current.updatedAt }, data: update,
     });
+
     if (!result.count) throw new AppError('conflict', 'A credencial mudou durante a renovação.');
   }
 
-  private toDomain(row: Row)
-  {
+  private toDomain (row: Row) {
     return new SocialAccount(
       row.id, row.companyId, row.platform, row.externalId, row.accountHandle, row.displayName,
       row.status, row.metadata, row.createdAt, row.updatedAt,

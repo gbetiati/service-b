@@ -11,7 +11,7 @@ export class CompanyController {
   ) {}
 
   @Get('me')
-  get() {
+  get () {
     return this.getCompanyUseCase.execute();
   }
 }

@@ -16,17 +16,17 @@ export class ProductController {
   ) {}
 
   @Post()
-  create(@Body() dto: CreateProductDto) {
+  create (@Body() dto: CreateProductDto) {
     return this.createProductUseCase.execute(dto);
   }
 
   @Get()
-  list() {
+  list () {
     return this.listProductUseCase.execute();
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
+  get (@Param('id', ParseUUIDPipe) id: string) {
     return this.getProductUseCase.execute(id);
   }
 }

@@ -14,8 +14,7 @@ export class CreateCampaignUseCase {
     private readonly brandRepository: BrandRepository,
   ) {}
 
-  async execute(dto: CreateCampaignDto)
-  {
+  async execute (dto: CreateCampaignDto) {
     requireRecord(await this.brandRepository.findById(dto.brandId), 'Marca');
     const entity = Campaign.create(this.requestContext.companyId, dto.name, dto.brandId, dto.objective ?? null);
     return this.campaignRepository.create(entity);

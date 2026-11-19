@@ -12,8 +12,7 @@ export class CreateBrandUseCase {
     private readonly requestContext: RequestContext,
   ) {}
 
-  execute(dto: CreateBrandDto)
-  {
+  execute (dto: CreateBrandDto) {
     const entity = Brand.create(this.requestContext.companyId, dto.name);
     return this.brandRepository.create(entity);
   }

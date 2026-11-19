@@ -14,8 +14,6 @@ NestJS
 TypeScript
 PostgreSQL
 Prisma ORM
-Redis
-BullMQ
 AWS S3 ou Cloudflare R2
 FFmpeg
 OCR
@@ -43,7 +41,7 @@ Controllers.
 Prisma Repositories.
 Integrações externas.
 Storage Providers.
-BullMQ Processors.
+Agendamento via cron.
 Implementações de serviços externos.
 
 Regras:
@@ -67,8 +65,6 @@ O sistema deverá permitir que empresas cadastrem marcas, produtos e imagens rea
 - TypeScript
 - PostgreSQL
 - Prisma ORM
-- Redis
-- BullMQ
 - AWS S3 ou Cloudflare R2
 - FFmpeg
 - OCR
@@ -94,7 +90,7 @@ Domain
 - Prisma Repositories.
 - Integrações externas.
 - Storage Providers.
-- BullMQ Processors.
+- Agendamento via cron.
 - Implementações de serviços externos.
   Regras:
 - Não implementar regras de negócio nos controllers.
@@ -205,7 +201,7 @@ updatedAt DateTime @updatedAt
 
 quero tambem que crie um provider com @Injectable, gerenico para fazer a conexao com outra api como instagram. Implementar tambem os mecanismos e enpoints para que eu possa conectar meu instagram no sistema
 
-em relacao a filas: quero somente uma fila, de agendamento (publication-schedule)
+O agendamento roda por cron no NestJS e guarda o estado no PostgreSQL. A conclusão do roteiro e do render chega por webhook.
 
 preciso tambem que crie as seguintes entidades DDD e schema respectivos (adicionar os campos padroes como createdAt, updatedAt, companyid, etc):
 Entidade

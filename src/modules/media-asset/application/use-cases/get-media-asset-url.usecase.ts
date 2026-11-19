@@ -9,8 +9,8 @@ export class GetMediaAssetUrlUseCase {
     private readonly mediaAssetRepository: MediaAssetRepository,
     private readonly storageProvider: StorageProvider,
   ) {}
-  async execute(id: string)
-  {
+
+  async execute (id: string) {
     const asset = requireRecord(await this.mediaAssetRepository.findById(id), 'Imagem');
     return { url: await this.storageProvider.url(asset.storageKey) };
   }

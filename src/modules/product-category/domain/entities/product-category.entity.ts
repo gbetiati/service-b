@@ -9,8 +9,7 @@ export class ProductCategory {
     readonly updatedAt: Date,
   ) {}
 
-  static create(companyId: string, name: string)
-  {
+  static create (companyId: string, name: string) {
     const now = new Date();
     return new ProductCategory(randomUUID(), companyId, name, now, now);
   }

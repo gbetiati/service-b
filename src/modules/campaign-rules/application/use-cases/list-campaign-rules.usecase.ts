@@ -6,6 +6,8 @@ export class ListCampaignRulesUseCase {
   constructor(
     private readonly campaignRulesRepository: CampaignRulesRepository,
   ) {}
-  execute()
-  { return this.campaignRulesRepository.findAll(); }
+
+  execute () {
+    return this.campaignRulesRepository.findAll();
+  }
 }

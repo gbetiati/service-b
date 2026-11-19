@@ -60,6 +60,8 @@ enum ContentStatus {
 }
 
 enum VideoStatus {
+  PENDING_SCRIPT
+  SCRIPT_GENERATING
   PENDING
   SUBMITTING
   RENDERING
@@ -185,13 +187,9 @@ model MediaAsset {
 model Content {
   id              String                       @id @default(uuid())
   companyId       String
-  company         Company                      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   campaingId      String
-  campaing        Campaign                     @relation(fields: [companyId, campaingId], references: [companyId, id], onDelete: Cascade)
   campaingRulesId String
-  campaingRules   CampaignRules                @relation(fields: [companyId, campaingId, campaingRulesId], references: [companyId, campaingId, id], onDelete: Cascade)
   productId       String
-  product         Product                      @relation(fields: [companyId, productId], references: [companyId, id], onDelete: NoAction)
   products        ContentProduct[]
   aiScript        String
   status          ContentStatus                @default(WAITING)
@@ -205,6 +203,11 @@ model Content {
   renders         VideoGeneration[]
   videos          VideoAsset[]
   schedules       ContentScheduled[]
+  
+  company         Company                      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaing        Campaign                     @relation(fields: [companyId, campaingId], references: [companyId, id], onDelete: Cascade)
+  product         Product                      @relation(fields: [companyId, productId], references: [companyId, id], onDelete: NoAction)
+  campaingRules   CampaignRules                @relation(fields: [companyId, campaingId, campaingRulesId], references: [companyId, campaingId, id], onDelete: Cascade)
 
   @@unique([companyId, id])
   @@index([companyId, createdAt])
@@ -259,6 +262,7 @@ model VideoGeneration {
   revision    Int
   input       Json
   status      VideoStatus @default(PENDING)
+  scriptSubmissionId String? @unique
   submissionId String?    @unique
   providerId  String?     @unique
   error       String?

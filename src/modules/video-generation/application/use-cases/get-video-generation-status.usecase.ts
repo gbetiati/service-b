@@ -10,8 +10,7 @@ export class GetVideoGenerationStatusUseCase {
     private readonly storageProvider: StorageProvider,
   ) {}
 
-  async execute(id: string)
-  {
+  async execute (id: string) {
     const { generation, video } = requireRecord(await this.videoGenerationRepository.findById(id), 'Render');
     const { contentId, revision, status, error, createdAt, updatedAt } = generation;
     return {

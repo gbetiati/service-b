@@ -17,7 +17,7 @@ export class ContentCatalogService {
     private readonly mediaAssetRepository: MediaAssetRepository,
   ) {}
 
-  async resolve(content: Content) {
+  async resolve (content: Content) {
     const { campaingId, campaingRulesId, assets, editorial } = content.fields;
     
     const productIds = content.allProductIds;
@@ -37,6 +37,7 @@ export class ContentCatalogService {
     
     const productDescriptions = products.map(product => {
       if (!product || product.brandId !== brandId) throw new AppError('invalid', 'Os produtos devem pertencer à marca da campanha.');
+
       return product.description ? product.name + ': ' + product.description : product.name;
     });
     

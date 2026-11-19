@@ -3,13 +3,15 @@ import { Prisma, PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  onModuleInit()
-  { return this.$connect(); }
-  onModuleDestroy()
-  { return this.$disconnect(); }
+  onModuleInit () {
+    return this.$connect();
+  }
 
-  async serializable<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T>
-  {
+  onModuleDestroy () {
+    return this.$disconnect();
+  }
+
+  async serializable<T> (work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.$transaction(work, { isolationLevel: 'Serializable' });
