@@ -20,7 +20,8 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   process.env.INSTAGRAM_APP_ID = 'test-app';
   process.env.INSTAGRAM_APP_SECRET = 'test-secret';
   process.env.INSTAGRAM_GRAPH_VERSION = 'v27.0';
-  process.env.INSTAGRAM_REDIRECT_URI = 'http://127.0.0.1/social-accounts/instagram/callback';
+  process.env.NODE_ENV = 'test';
+  process.env.SERVICE_BASE_URL = 'http://127.0.0.1';
   const { AppModule } = require('../dist/app.module');
   const { PrismaService } = require('../dist/prisma/prisma.service');
   const { AppErrorFilter } = require('../dist/shared/core/errors/app-error.filter');
@@ -123,6 +124,7 @@ test('company onboarding through reviewed and scheduled video publication', { ti
 
         if (url.hostname === 'api.instagram.com') {
           assert.equal(request.body.get('code'), 'accepted-code');
+          assert.equal(request.body.get('redirect_uri'), 'http://127.0.0.1/social-accounts/instagram/callback');
           return { data: [{ access_token: 'short-lived', permissions: 'instagram_business_basic,instagram_business_content_publish' }] };
         }
 
@@ -263,7 +265,9 @@ test('company onboarding through reviewed and scheduled video publication', { ti
 
     const { data: connection, cookie } = await request('/social-accounts/instagram/connect', { method: 'POST', token, status: 201 });
     assert.ok(cookie);
-    const state = new URL(connection.authorizationUrl).searchParams.get('state');
+    const authorization = new URL(connection.authorizationUrl);
+    assert.equal(authorization.searchParams.get('redirect_uri'), 'http://127.0.0.1/social-accounts/instagram/callback');
+    const state = authorization.searchParams.get('state');
     const callback = '/social-accounts/instagram/callback?code=accepted-code&state=' + state;
     await get(callback, undefined, 400);
     const { data: account } = await request(callback, { cookie });

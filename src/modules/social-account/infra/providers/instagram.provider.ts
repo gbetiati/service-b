@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { requiredEnv } from '@/shared/core/config';
+import { requiredEnv, servicePublicUrl } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
 import { ExternalApiProvider } from '@/shared/libs/http/external-api.provider';
 import { ContainerStatus, SocialPlatformProvider } from '../../domain/providers/social-platform.provider';
 
 type ShortToken = { access_token?: string; permissions?: string | string[] };
 type LongToken = { access_token?: string; expires_in?: number };
+export const INSTAGRAM_CALLBACK_PATH = '/social-accounts/instagram/callback';
+
 const graph = 'https://graph.instagram.com';
 const scopes = ['instagram_business_basic', 'instagram_business_content_publish'];
 
@@ -18,7 +20,7 @@ export class InstagramProvider implements SocialPlatformProvider {
   authorizationUrl (state: string) {
     const url = new URL('https://www.instagram.com/oauth/authorize');
     url.search = new URLSearchParams({
-      client_id: requiredEnv('INSTAGRAM_APP_ID'), redirect_uri: requiredEnv('INSTAGRAM_REDIRECT_URI'),
+      client_id: requiredEnv('INSTAGRAM_APP_ID'), redirect_uri: servicePublicUrl(INSTAGRAM_CALLBACK_PATH).href,
       response_type: 'code', scope: scopes.join(','), state, enable_fb_login: '0',
     }).toString();
     return url.href;
@@ -29,7 +31,7 @@ export class InstagramProvider implements SocialPlatformProvider {
       method: 'POST',
       body: new URLSearchParams({
         client_id: requiredEnv('INSTAGRAM_APP_ID'), client_secret: requiredEnv('INSTAGRAM_APP_SECRET'),
-        grant_type: 'authorization_code', redirect_uri: requiredEnv('INSTAGRAM_REDIRECT_URI'), code,
+        grant_type: 'authorization_code', redirect_uri: servicePublicUrl(INSTAGRAM_CALLBACK_PATH).href, code,
       }),
     });
     const short = result.data?.[0] ?? result;

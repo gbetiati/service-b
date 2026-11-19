@@ -1,6 +1,6 @@
 import { Controller, Get, Header, Headers, Param, ParseUUIDPipe, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { CookieOptions, Response } from 'express';
-import { requiredEnv } from '@/shared/core/config';
+import { servicePublicUrl } from '@/shared/core/config';
 import { TenantGuard } from '@/modules/identity/infra/guards/tenant.guard';
 import { JwtAuthGuard } from '@/modules/identity/infra/jwt/jwt-auth.guard';
 import { InstagramCallbackDto } from '../../application/dto/instagram-callback.dto';
@@ -9,11 +9,13 @@ import { ListSocialAccountsUseCase } from '../../application/use-cases/list-soci
 import { RefreshInstagramTokenUseCase } from '../../application/use-cases/refresh-instagram-token.usecase';
 import { StartInstagramConnectionUseCase } from '../../application/use-cases/start-instagram-connection.usecase';
 
+import { INSTAGRAM_CALLBACK_PATH } from '../providers/instagram.provider';
+
 const oauthCookie = 'service_b_instagram_oauth';
 
 const cookieOptions = (): CookieOptions => ({
-  httpOnly: true, sameSite: 'lax', secure: new URL(requiredEnv('INSTAGRAM_REDIRECT_URI')).protocol === 'https:',
-  path: '/social-accounts/instagram/callback',
+  httpOnly: true, sameSite: 'lax', secure: servicePublicUrl(INSTAGRAM_CALLBACK_PATH).protocol === 'https:',
+  path: INSTAGRAM_CALLBACK_PATH,
 });
 
 @Controller('social-accounts')

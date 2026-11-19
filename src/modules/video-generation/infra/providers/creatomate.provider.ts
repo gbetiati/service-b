@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { Injectable } from '@nestjs/common';
-import { requiredEnv } from '@/shared/core/config';
+import { requiredEnv, servicePublicUrl } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
 import { ExternalApiProvider } from '@/shared/libs/http/external-api.provider';
 import { VideoProvider } from '../../domain/providers/video.provider';
@@ -26,9 +26,9 @@ export class CreatomateProvider implements VideoProvider {
       modifications[imageElements[index]] = url;
     });
 
-    const webhookUrl = new URL(requiredEnv('CREATOMATE_WEBHOOK_URL'));
+    const webhookUrl = servicePublicUrl('/webhooks/creatomate');
 
-    if (webhookUrl.protocol !== 'https:') throw new AppError('unavailable', 'CREATOMATE_WEBHOOK_URL precisa usar HTTPS.');
+    if (webhookUrl.protocol !== 'https:') throw new AppError('unavailable', 'A URL pública do serviço precisa usar HTTPS para o webhook do Creatomate.');
 
     webhookUrl.searchParams.set('token', requiredEnv('CREATOMATE_WEBHOOK_SECRET'));
 
