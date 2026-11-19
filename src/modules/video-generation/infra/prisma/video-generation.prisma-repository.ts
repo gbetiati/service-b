@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { VideoAsset as AssetRow, VideoGeneration as Row } from '@prisma/client';
-import type { ScriptNotification } from '@/modules/content/domain/providers/script.provider';
+import type { ScriptResult } from '@/modules/content/domain/providers/script.provider';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { VideoAsset, VideoReview } from '../../domain/entities/video-asset.entity';
 import { RenderInput, VideoGeneration } from '../../domain/entities/video-generation.entity';
-import { RenderNotification } from '../../domain/providers/video.provider';
+import { RenderResult } from '../../domain/providers/video.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
 @Injectable()
@@ -31,7 +31,10 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
       if (existing && (existing.status !== 'FAILED' || !retryFailed)) return this.toDomain(existing);
 
       await tx.content.updateMany({
-        where: { companyId, id: contentId, revision }, data: { status: 'WAITING', aiScript: initialStatus === 'PENDING' ? input.script : undefined },
+        where: { companyId, id: contentId, revision }, data: {
+          status: 'WAITING', scriptStatus: initialStatus === 'PENDING' ? 'READY' : 'PENDING', videoStatus: 'NOT_STARTED',
+          aiScript: initialStatus === 'PENDING' ? input.script : undefined,
+        },
       });
       
       const row = existing
@@ -79,7 +82,7 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
     });
   }
 
-  async completeScript ({ submissionId, outcome }: ScriptNotification) {
+  async completeScript ({ submissionId, outcome }: ScriptResult) {
     return this.prismaService.serializable(async tx => {
       const row = await tx.videoGeneration.findUnique({ where: { scriptSubmissionId: submissionId } });
 
@@ -100,7 +103,7 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
 
       await tx.content.updateMany({
         where: content,
-        data: 'script' in outcome ? { aiScript: outcome.script } : { status: 'ERROR' },
+        data: 'script' in outcome ? { aiScript: outcome.script, scriptStatus: 'READY' } : { status: 'ERROR', scriptStatus: 'FAILED' },
       });
 
       return this.toDomain(generation);
@@ -110,11 +113,28 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
   async claimSubmission (generation: VideoGeneration) {
     const leaseUntil = new Date(Date.now() + 120_000);
     const submissionId = randomUUID();
-    const changed = await this.prismaService.videoGeneration.updateMany({
-      where: { id: generation.id, companyId: generation.companyId, status: 'PENDING' },
-      data: { leaseUntil, submissionId, status: 'SUBMITTING' },
+    return this.prismaService.serializable(async tx => {
+      const changed = await tx.videoGeneration.updateMany({
+        where: { id: generation.id, companyId: generation.companyId, status: 'PENDING' },
+        data: { leaseUntil, submissionId, status: 'SUBMITTING' },
+      });
+
+      if (!changed.count) return null;
+
+      const content = await tx.content.updateMany({
+        where: {
+          companyId: generation.companyId, id: generation.contentId, revision: generation.revision,
+          scriptStatus: 'READY', aiScript: { not: '' },
+        },
+        data: { videoStatus: 'PENDING' },
+      });
+
+      if (!content.count || !generation.input.script.trim()) {
+        throw new AppError('conflict', 'O roteiro da revisão atual ainda não está pronto para solicitar o vídeo.');
+      }
+
+      return { ...generation, status: 'SUBMITTING' as const, leaseUntil, submissionId };
     });
-    return changed.count ? { ...generation, status: 'SUBMITTING' as const, leaseUntil, submissionId } : null;
   }
 
   async submitted (generation: VideoGeneration, providerId: string) {
@@ -123,11 +143,11 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
     });
   }
 
-  async claimCompletion (notification: RenderNotification) {
+  async claimCompletion (renderResult: RenderResult) {
     return this.prismaService.serializable(async tx => {
-      const row = await tx.videoGeneration.findUnique({ where: { submissionId: notification.submissionId } });
+      const row = await tx.videoGeneration.findUnique({ where: { submissionId: renderResult.submissionId } });
 
-      if (!row || (row.providerId && row.providerId !== notification.providerId)) return null;
+      if (!row || (row.providerId && row.providerId !== renderResult.providerId)) return null;
 
       if (row.status === 'READY' || row.status === 'FAILED') return { generation: this.toDomain(row), claimed: false };
 
@@ -139,7 +159,7 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
 
       const generation = await tx.videoGeneration.update({
         where: { id: row.id },
-        data: { status: 'RENDERING', providerId: notification.providerId, leaseUntil: new Date(Date.now() + 600_000) },
+        data: { status: 'RENDERING', providerId: renderResult.providerId, leaseUntil: new Date(Date.now() + 600_000) },
       });
       return { generation: this.toDomain(generation), claimed: true };
     });
@@ -149,12 +169,12 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
     await this.prismaService.videoGeneration.updateMany({ where: this.owned(generation), data: { leaseUntil: null } });
   }
 
-  async fail (job: VideoGeneration, message: string) {
+  async fail (job: VideoGeneration, message: string, stage: 'script' | 'video' = 'video') {
     await this.prismaService.$transaction(async tx => {
       const changed = await tx.videoGeneration.updateMany({ where: this.owned(job), data: { status: 'FAILED', error: message, leaseUntil: null } });
 
       if (changed.count) await tx.content.updateMany({
-        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: 'ERROR' },
+        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: 'ERROR', ...(stage === 'script' ? { scriptStatus: 'FAILED' } : { videoStatus: 'FAILED' }) },
       });
     });
   }
@@ -168,7 +188,7 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
       const { review, ...data } = video;
       await tx.videoAsset.create({ data: { ...data, reviewStatus: review.status, review } });
       await tx.content.updateMany({
-        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: review.status === 'APPROVED' ? 'READY' : 'REPROVED' },
+        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: review.status === 'APPROVED' ? 'READY' : 'REPROVED', videoStatus: 'READY' },
       });
     });
   }

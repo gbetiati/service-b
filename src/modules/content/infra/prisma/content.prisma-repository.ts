@@ -35,7 +35,7 @@ export class PrismaContentRepository implements ContentRepository {
     const companyId = this.requestContext.companyId;
     return this.prismaService.serializable(async tx => {
       const updated = await tx.content.updateMany({
-        where: { companyId, id, revision: revision - 1 }, data: { ...this.fields(content), revision, status: 'WAITING' },
+        where: { companyId, id, revision: revision - 1 }, data: { ...this.fields(content), revision, status: 'WAITING', videoStatus: 'NOT_STARTED' },
       });
 
       if (!updated.count) throw new AppError('conflict', 'A revisão informada está desatualizada.');
@@ -61,6 +61,32 @@ export class PrismaContentRepository implements ContentRepository {
     return row && this.toDomain(row);
   }
 
+  async findReferences (content: Content) {
+    const companyId = this.requestContext.companyId;
+    const { campaingId, campaingRulesId, assets } = content.fields;
+    const productIds = content.allProductIds;
+    const [campaign, rule, products, images] = await Promise.all([
+      this.prismaService.campaign.findUnique({
+        where: { companyId_id: { companyId, id: campaingId } },
+        select: { brandId: true, objective: true, brand: { select: { name: true } } },
+      }),
+      this.prismaService.campaignRules.findUnique({
+        where: { companyId_id: { companyId, id: campaingRulesId } },
+        select: { campaingId: true, guidelines: true },
+      }),
+      this.prismaService.product.findMany({
+        where: { companyId, id: { in: productIds } },
+        select: { id: true, brandId: true, name: true, description: true },
+      }),
+      this.prismaService.mediaAsset.findMany({
+        where: { companyId, id: { in: assets.map(asset => asset.mediaAssetId) } },
+        select: { id: true, productId: true, storageKey: true },
+      }),
+    ]);
+
+    return { campaign, rule, products, images };
+  }
+
   async findAll (skip: number, take: number) {
     const rows = await this.prismaService.content.findMany({
       where: { companyId: this.requestContext.companyId }, include, skip, take, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -77,7 +103,7 @@ export class PrismaContentRepository implements ContentRepository {
 
   private fields (content: Content) {
     const { aiScript, editorial, campaingId, campaingRulesId, productId } = content.fields;
-    return { aiScript, editorial, campaingId, campaingRulesId, productId };
+    return { aiScript, editorial, campaingId, campaingRulesId, productId, scriptStatus: aiScript.trim() ? 'READY' as const : 'NOT_STARTED' as const };
   }
 
   private relations (content: Content) {
@@ -101,6 +127,6 @@ export class PrismaContentRepository implements ContentRepository {
       campaingId, campaingRulesId, productId, aiScript, editorial: editorial as Editorial,
       assets: row.assets.map(asset => new ContentAsset(asset.position, asset.mediaAssetId)),
       productIds: row.products.map(product => product.productId),
-    }, revision, ContentStatus[status], createdAt, updatedAt);
+    }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus);
   }
 }

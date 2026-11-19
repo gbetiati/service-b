@@ -8,12 +8,11 @@ export class Product {
     readonly createdAt: Date,
     readonly updatedAt: Date,
     readonly brandId: string,
-    readonly categoryId: string | null,
     readonly description: string | null,
   ) {}
 
-  static create (companyId: string, name: string, brandId: string, categoryId: string | null, description: string | null) {
+  static create (companyId: string, name: string, brandId: string, description: string | null) {
     const now = new Date();
-    return new Product(randomUUID(), companyId, name, now, now, brandId, categoryId, description);
+    return new Product(randomUUID(), companyId, name, now, now, brandId, description);
   }
 }

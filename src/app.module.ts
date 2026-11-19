@@ -8,7 +8,6 @@ import { ContentModule } from './modules/content/content.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { MediaAssetModule } from './modules/media-asset/media-asset.module';
 import { ProductModule } from './modules/product/product.module';
-import { ProductCategoryModule } from './modules/product-category/product-category.module';
 import { PublicationModule } from './modules/publication/publication.module';
 import { SocialAccountModule } from './modules/social-account/social-account.module';
 import { VideoGenerationModule } from './modules/video-generation/video-generation.module';
@@ -18,7 +17,7 @@ import { RequestContextModule } from './shared/core/request-context/request-cont
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RequestContextModule, ScheduleModule.forRoot(),
-    IdentityModule, BrandModule, CampaignModule, CampaignRulesModule, ProductModule, ProductCategoryModule, MediaAssetModule,
+    IdentityModule, BrandModule, CampaignModule, CampaignRulesModule, ProductModule, MediaAssetModule,
     ContentModule, VideoGenerationModule, SocialAccountModule, PublicationModule,
   ],
 })

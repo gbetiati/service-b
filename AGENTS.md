@@ -109,7 +109,6 @@ Domain
 - Campaing.
 - CampaingRules.
 - Products.
-- ProductCategories.
 - MediaAssets.
   Criar migrations Prisma, repositories, Use Cases, controllers e DTOs.
 

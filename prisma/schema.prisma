@@ -16,7 +16,6 @@ model Company {
   brands      Brand[]
   campaigns   Campaign[]
   rules       CampaignRules[]
-  categories  ProductCategory[]
   products    Product[]
   media       MediaAsset[]
   contents    Content[]
@@ -57,6 +56,13 @@ enum ContentStatus {
   REPROVED
   WAITING
   ERROR
+}
+
+enum PreparationStatus {
+  NOT_STARTED
+  PENDING
+  READY
+  FAILED
 }
 
 enum VideoStatus {
@@ -133,27 +139,12 @@ model CampaignRules {
   @@map("campaign_rules")
 }
 
-model ProductCategory {
-  id        String    @id @default(uuid())
-  companyId String
-  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name      String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  products  Product[]
-
-  @@unique([companyId, id])
-  @@map("product_categories")
-}
-
 model Product {
   id          String           @id @default(uuid())
   companyId   String
   company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   brandId     String
   brand       Brand            @relation(fields: [companyId, brandId], references: [companyId, id], onDelete: Cascade)
-  categoryId  String?
-  category    ProductCategory? @relation(fields: [companyId, categoryId], references: [companyId, id], onDelete: NoAction)
   name        String
   description String?
   createdAt   DateTime         @default(now())
@@ -192,6 +183,8 @@ model Content {
   productId       String
   products        ContentProduct[]
   aiScript        String
+  scriptStatus    PreparationStatus            @default(NOT_STARTED)
+  videoStatus     PreparationStatus            @default(NOT_STARTED)
   status          ContentStatus                @default(WAITING)
   editorial       Json                         @default("{}")
   embedding       Unsupported("vector(1536)")?
@@ -366,12 +359,11 @@ model Publication {
   containerId     String?
   externalId      String?
   error           String?
-  nextAttemptAt   DateTime
   leaseUntil      DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
   @@unique([companyId, scheduleId])
-  @@index([status, nextAttemptAt])
+  @@index([status, updatedAt])
   @@map("publications")
 }

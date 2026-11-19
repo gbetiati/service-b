@@ -4,8 +4,6 @@ import { VideoGenerationModule } from '../video-generation/video-generation.modu
 import { SocialAccountModule } from '../social-account/social-account.module';
 import { PublicationExecutionReader } from './application/ports/publication-execution-reader';
 import { PublicationSchedulingTransaction } from './application/ports/publication-scheduling-transaction';
-import { HandleScriptCompletedUseCase } from './application/use-cases/handle-script-completed.usecase';
-import { HandleVideoRenderCompletedUseCase } from './application/use-cases/handle-video-render-completed.usecase';
 import { GetPublicationUseCase } from './application/use-cases/get-publication.usecase';
 import { PublicationOrchestrator } from './application/use-cases/publication.orchestrator';
 import { PublishScheduledContentUseCase } from './application/use-cases/publish-scheduled-content.usecase';
@@ -23,7 +21,7 @@ import { PublicationScheduler } from './infra/schedule/publication.scheduler';
   imports: [SocialAccountModule, StorageModule, VideoGenerationModule],
   controllers: [PublicationController, OpenAiWebhookController, CreatomateWebhookController],
   providers: [
-    GetPublicationUseCase, SchedulePublicationUseCase, PublishScheduledContentUseCase, PublicationOrchestrator, HandleScriptCompletedUseCase, HandleVideoRenderCompletedUseCase,
+    GetPublicationUseCase, SchedulePublicationUseCase, PublishScheduledContentUseCase, PublicationOrchestrator,
     PublicationScheduler, PrismaPublicationRepository,
     { provide: PublicationRepository, useExisting: PrismaPublicationRepository },
     { provide: PublicationExecutionReader, useClass: PrismaPublicationExecutionReader },

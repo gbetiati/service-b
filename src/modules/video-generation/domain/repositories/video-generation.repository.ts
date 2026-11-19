@@ -1,7 +1,7 @@
-import type { ScriptNotification } from '@/modules/content/domain/providers/script.provider';
+import type { ScriptResult } from '@/modules/content/domain/providers/script.provider';
 import { VideoAsset } from '../entities/video-asset.entity';
 import { RenderInput, VideoGeneration } from '../entities/video-generation.entity';
-import { RenderNotification } from '../providers/video.provider';
+import { RenderResult } from '../providers/video.provider';
 
 export abstract class VideoGenerationRepository {
   abstract create (contentId: string, revision: number, input: RenderInput, retryFailed: boolean, initialStatus?: 'PENDING_SCRIPT' | 'PENDING'): Promise<VideoGeneration>;
@@ -14,17 +14,17 @@ export abstract class VideoGenerationRepository {
 
   abstract scriptSubmitted (generation: VideoGeneration): Promise<void>;
 
-  abstract completeScript (notification: ScriptNotification): Promise<VideoGeneration | null>;
+  abstract completeScript (scriptResult: ScriptResult): Promise<VideoGeneration | null>;
 
   abstract claimSubmission (generation: VideoGeneration): Promise<(VideoGeneration & { submissionId: string }) | null>;
 
   abstract submitted (generation: VideoGeneration, providerId: string): Promise<void>;
 
-  abstract claimCompletion (notification: RenderNotification): Promise<{ generation: VideoGeneration; claimed: boolean } | null>;
+  abstract claimCompletion (renderResult: RenderResult): Promise<{ generation: VideoGeneration; claimed: boolean } | null>;
 
   abstract release (generation: VideoGeneration): Promise<void>;
 
-  abstract fail (generation: VideoGeneration, message: string): Promise<void>;
+  abstract fail (generation: VideoGeneration, message: string, stage?: 'script' | 'video'): Promise<void>;
 
   abstract complete (generation: VideoGeneration, video: VideoAsset): Promise<void>;
 }

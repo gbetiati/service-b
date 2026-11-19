@@ -5,7 +5,7 @@ const { PublicationPolicy } = require('../dist/modules/publication/domain/entiti
 const { PublicationOrchestrator } = require('../dist/modules/publication/application/use-cases/publication.orchestrator');
 const { PublishScheduledContentUseCase } = require('../dist/modules/publication/application/use-cases/publish-scheduled-content.usecase');
 const {
-  DEFAULT_DEFER_MS, PUBLICATION_GRACE_MS, PUBLICATION_PREPARATION_MS,
+  PUBLICATION_GRACE_MS,
 } = require('../dist/modules/publication/domain/entities/publication-timing');
 
 Logger.overrideLogger(false);
@@ -27,11 +27,9 @@ test('publication policy requires a token valid after both the scheduled and act
   assert.equal(PublicationPolicy.canPublishWithCredential(true, null, scheduled, now), false);
 });
 
-test('publication policy uses the preparation window and an exclusive grace deadline', () => {
+test('publication policy uses an exclusive grace deadline', () => {
   const date = new Date('2026-11-19T17:00:00Z');
   const deadline = date.getTime() + PUBLICATION_GRACE_MS;
-  assert.equal(PublicationPolicy.calculateInitialAttemptAt(date, true).getTime(), date.getTime());
-  assert.equal(PublicationPolicy.calculateInitialAttemptAt(date, false).getTime(), date.getTime() - PUBLICATION_PREPARATION_MS);
   assert.equal(PublicationPolicy.isWithinGraceWindow(date, deadline - 1), true);
   assert.equal(PublicationPolicy.isWithinGraceWindow(date, deadline), false);
 });
@@ -59,24 +57,22 @@ function setup ({ overrides = {}, videoState = {}, startRender = async () => ({ 
   };
 
   const repository = {
-    claim: async () => claimed ? job : null,
+    reserveForProcessing: async () => claimed ? job : null,
 
-    fail: record('fail'),
-    markReady: record('markReady'),
-    defer: record('defer'),
-    waitForVideo: record('waitForVideo'),
+    markFailed: record('markFailed'),
+    attachApprovedVideo: record('attachApprovedVideo'),
+    releaseProcessing: record('releaseProcessing'),
   };
-  const generator = {
-    ensureGenerationStarted: async command => {
-      effects.push(['generate', command]);
-      return startRender();
-    },
+  const request = name => async command => {
+    effects.push([name, command]);
+    return startRender();
   };
+  const generator = { requestScript: request('requestScript'), requestVideo: request('requestVideo') };
   const publisher = { execute: record('publish') };
   const reader = {
-    readVideo: async () => {
-      effects.push(['readVideo']);
-      return { video: null, approved: false, generationStatus: null, ...videoState };
+    readPreparationState: async () => {
+      effects.push(['readPreparationState']);
+      return { video: null, approved: false, scriptStatus: 'NOT_STARTED', videoStatus: 'NOT_STARTED', ...videoState };
     },
   };
   return { job, effects, orchestrator: new PublicationOrchestrator(repository, generator, publisher, reader) };
@@ -89,87 +85,93 @@ test('publication orchestrator skips work without a claim and rejects an invalid
 
   const invalid = setup({ overrides: { credential: null } });
   await invalid.orchestrator.execute(invalid.job.id);
-  assert.deepEqual(invalid.effects, [['fail', invalid.job, 'A conta precisa ter uma credencial ativa para publicar.']]);
+  assert.deepEqual(invalid.effects, [['markFailed', invalid.job, 'A conta precisa ter uma credencial ativa para publicar.']]);
 });
 
 test('publication orchestrator rejects a disapproved video and hands an approved one to the publisher', async () => {
   const video = { id: 'video', storageKey: 'video.mp4' };
-  const rejected = setup({ videoState: { video } });
-  await rejected.orchestrator.execute(rejected.job.id);
-  assert.deepEqual(rejected.effects.map(([name]) => name), ['readVideo', 'fail']);
+  const rejected = setup({ videoState: { video, scriptStatus: 'READY', videoStatus: 'READY' } });
+  await rejected.orchestrator.execute(rejected.job.id, 'publication');
+  assert.deepEqual(rejected.effects.map(([name]) => name), ['readPreparationState', 'markFailed']);
 
-  const approved = setup({ videoState: { video, approved: true } });
-  await approved.orchestrator.execute(approved.job.id);
+  const incomplete = setup({ videoState: { video, approved: true, scriptStatus: 'PENDING', videoStatus: 'READY', generationStatus: 'READY' } });
+  await incomplete.orchestrator.execute(incomplete.job.id, 'publication');
+  assert.deepEqual(incomplete.effects.map(([name]) => name), ['readPreparationState', 'releaseProcessing']);
+
+  const approved = setup({ videoState: { video, approved: true, scriptStatus: 'READY', videoStatus: 'READY' } });
+  await approved.orchestrator.execute(approved.job.id, 'publication');
   assert.deepEqual(approved.effects, [
-    ['readVideo'],
-    ['markReady', approved.job, 'video'],
+    ['readPreparationState'],
+    ['attachApprovedVideo', approved.job, 'video'],
     ['publish', approved.job, 'video.mp4', approved.job.credential],
   ]);
 });
 
-test('publication orchestrator distinguishes a missing, pending, rendering, or failed generation', async () => {
-  for (const [status, mode] of [[null, 'generate-script'], ['PENDING_SCRIPT', 'submit-pending'], ['PENDING', 'submit-pending']]) {
-    const flow = setup({ videoState: { generationStatus: status } });
-    await flow.orchestrator.execute(flow.job.id);
+test('the preparation phase requests each provider only for a step that has not started', async () => {
+  for (const [scriptStatus, request] of [['NOT_STARTED', 'requestScript'], ['READY', 'requestVideo']]) {
+    const flow = setup({ videoState: { scriptStatus } });
+    await flow.orchestrator.execute(flow.job.id, 'preparation');
     assert.deepEqual(flow.effects, [
-      ['readVideo'],
-      ['generate', { companyId: 'company', contentId: 'content', mode }],
-      ['waitForVideo', flow.job, PublicationPolicy.graceDeadline(flow.job.schedule.date)],
+      ['readPreparationState'],
+      [request, { companyId: 'company', contentId: 'content' }],
+      ['releaseProcessing', flow.job],
     ]);
   }
 
-  for (const status of ['SCRIPT_GENERATING', 'SUBMITTING', 'RENDERING']) {
-    const waiting = setup({ videoState: { generationStatus: status } });
-    await waiting.orchestrator.execute(waiting.job.id);
-    assert.deepEqual(waiting.effects.map(([name]) => name), ['readVideo', 'waitForVideo']);
+  for (const videoState of [{ scriptStatus: 'PENDING' }, { scriptStatus: 'READY', videoStatus: 'PENDING' }]) {
+    const waiting = setup({ videoState });
+    await waiting.orchestrator.execute(waiting.job.id, 'preparation');
+    assert.deepEqual(waiting.effects.map(([name]) => name), ['readPreparationState', 'releaseProcessing']);
   }
 
-  const failed = setup({ videoState: { generationStatus: 'FAILED' } });
-  await failed.orchestrator.execute(failed.job.id);
-  assert.deepEqual(failed.effects.map(([name]) => name), ['readVideo', 'fail']);
-
-  const pending = setup({
-    videoState: { generationStatus: 'PENDING' },
-
-    startRender: async () => ({ status: 'FAILED' }),
-  });
-  await pending.orchestrator.execute(pending.job.id);
-  assert.deepEqual(pending.effects.map(([name]) => name), ['readVideo', 'generate', 'fail']);
+  const rejected = setup({ videoState: { scriptStatus: 'READY', videoStatus: 'FAILED' } });
+  await rejected.orchestrator.execute(rejected.job.id, 'preparation');
+  assert.deepEqual(rejected.effects.map(([name]) => name), ['readPreparationState', 'markFailed']);
 });
 
-test('publication orchestrator times out waiting for video and schedules a single retry on a temporary error', async () => {
+test('preparation fails on timeout or provider error', async () => {
   const expired = setup({
     overrides: { schedule: { date: new Date(Date.now() - PUBLICATION_GRACE_MS), contentId: 'content' } },
-    videoState: { generationStatus: 'RENDERING' },
+    videoState: { scriptStatus: 'PENDING' },
   });
-  await expired.orchestrator.execute(expired.job.id);
-  assert.deepEqual(expired.effects, [['readVideo'], ['fail', expired.job, 'O prazo expirou antes de o vídeo ficar pronto.']]);
+  await expired.orchestrator.execute(expired.job.id, 'preparation');
+  assert.deepEqual(expired.effects.map(([name]) => name), ['readPreparationState', 'markFailed']);
 
-  const retry = setup({ startRender: async () => {
-    throw new Error('failure');
-  } });
-  await retry.orchestrator.execute(retry.job.id);
-  assert.deepEqual(retry.effects.map(([name]) => name), ['readVideo', 'generate', 'defer']);
+  const failure = setup({ startRender: async () => { throw new Error('failure'); } });
+  await failure.orchestrator.execute(failure.job.id, 'preparation');
+  assert.deepEqual(failure.effects.map(([name]) => name), ['readPreparationState', 'requestScript', 'markFailed']);
 });
 
-test('a ready Instagram container is deferred until the actual publication time', async () => {
-  const date = new Date(Date.now() + DEFAULT_DEFER_MS);
-  const job = { schedule: { date }, containerId: 'container' };
-  const deferred = [];
-  let publishes = 0;
+test('a ready Instagram container is released without contacting Instagram before the scheduled time', async () => {
+  const job = { schedule: { date: new Date(Date.now() + 60_000) }, containerId: 'container' };
+  const released = [];
   const publisher = new PublishScheduledContentUseCase(
-    { defer: async (...args) => {
-      deferred.push(args);
-    } },
-    { containerStatus: async () => 'ready',
-
-      publish: async () => {
-      publishes++;
-    } },
-    { decrypt: () => 'token' },
+    { releaseProcessing: async (...args) => released.push(args) },
+    {},
+    {},
     {},
   );
   await publisher.execute(job, 'video.mp4', {});
-  assert.equal(publishes, 0);
-  assert.deepEqual(deferred, [[job, undefined, date]]);
+  assert.deepEqual(released, [[job]]);
+});
+
+test('a failed video download marks the video stage as failed', async () => {
+  const { CompleteVideoGenerationUseCase } = require('../dist/modules/video-generation/application/use-cases/complete-video-generation.usecase');
+  const generation = { id: 'generation', companyId: 'company', contentId: 'content', revision: 1 };
+  const failures = [];
+  const useCase = new CompleteVideoGenerationUseCase(
+    {
+      claimCompletion: async () => ({ generation, claimed: true }),
+      fail: async (...args) => failures.push(args),
+    },
+    { download: async () => { throw new Error('MP4 unavailable'); } },
+    {},
+    {},
+  );
+
+  const result = await useCase.execute({
+    submissionId: 'submission', providerId: 'provider', outcome: { state: 'ready', url: 'https://cdn.invalid/render.mp4' },
+  });
+  assert.equal(result, generation);
+  assert.deepEqual(failures, [[generation, 'Falha ao baixar ou salvar o vídeo.']]);
 });

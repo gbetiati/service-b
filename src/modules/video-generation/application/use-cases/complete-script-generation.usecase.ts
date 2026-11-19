@@ -10,7 +10,7 @@ export class CompleteScriptGenerationUseCase {
   ) {}
 
   async execute (responseId: string) {
-    const notification = await this.scriptProvider.readResult(responseId);
-    return notification && this.videoGenerationRepository.completeScript(notification);
+    const scriptResult = await this.scriptProvider.readResult(responseId);
+    return scriptResult && this.videoGenerationRepository.completeScript(scriptResult);
   }
 }

@@ -1,11 +1,5 @@
 import { Module } from '@nestjs/common';
 import { AiModule } from '@/shared/libs/ai/ai.module';
-import { BrandModule } from '../brand/brand.module';
-import { CampaignModule } from '../campaign/campaign.module';
-import { CampaignRulesModule } from '../campaign-rules/campaign-rules.module';
-import { MediaAssetModule } from '../media-asset/media-asset.module';
-import { ProductModule } from '../product/product.module';
-import { ContentCatalogService } from './application/services/content-catalog.service';
 import { CreateContentUseCase } from './application/use-cases/create-content.usecase';
 import { GetContentDetailsUseCase } from './application/use-cases/get-content-details.usecase';
 import { GetContentHistoryUseCase } from './application/use-cases/get-content-history.usecase';
@@ -18,13 +12,13 @@ import { PrismaContentRepository } from './infra/prisma/content.prisma-repositor
 import { OpenAiScriptProvider } from './infra/providers/open-ai-script.provider';
 
 @Module({
-  imports: [AiModule, BrandModule, CampaignModule, CampaignRulesModule, MediaAssetModule, ProductModule],
+  imports: [AiModule],
   controllers: [ContentController],
   providers: [
-    ContentCatalogService, CreateContentUseCase, GetContentDetailsUseCase, GetContentHistoryUseCase, ListContentUseCase, UpdateContentUseCase,
+    CreateContentUseCase, GetContentDetailsUseCase, GetContentHistoryUseCase, ListContentUseCase, UpdateContentUseCase,
     { provide: ContentRepository, useClass: PrismaContentRepository },
     { provide: ScriptProvider, useClass: OpenAiScriptProvider },
   ],
-  exports: [ContentRepository, ContentCatalogService, ScriptProvider],
+  exports: [ContentRepository, ScriptProvider],
 })
 export class ContentModule {}

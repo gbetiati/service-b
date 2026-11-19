@@ -39,7 +39,6 @@ export class SchedulePublicationUseCase {
       return publicationRepository.save({
         companyId, contentId, videoId, socialAccountId, date,
         caption: dto.caption ?? content.editorial.caption,
-        nextAttemptAt: PublicationPolicy.calculateInitialAttemptAt(date, !!videoId),
       });
     });
   }

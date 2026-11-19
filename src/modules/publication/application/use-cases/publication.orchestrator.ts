@@ -2,9 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { GenerateVideoUseCase } from '@/modules/video-generation/application/use-cases/generate-video.usecase';
 import { AppError } from '@/shared/core/errors/app.error';
 import { PublicationExecutionReader } from '../ports/publication-execution-reader';
-import { PublicationWork } from '../../domain/entities/publication.entity';
 import { PublicationPolicy } from '../../domain/entities/publication.policy';
-import { PublicationRepository } from '../../domain/repositories/publication.repository';
+import { PublicationPhase, PublicationRepository } from '../../domain/repositories/publication.repository';
 import { PublishScheduledContentUseCase } from './publish-scheduled-content.usecase';
 
 @Injectable()
@@ -16,67 +15,59 @@ export class PublicationOrchestrator {
     private readonly generateVideoUseCase: GenerateVideoUseCase,
     private readonly publishScheduledContentUseCase: PublishScheduledContentUseCase,
     private readonly publicationExecutionReader: PublicationExecutionReader,
-  ) { }
+  ) {}
 
-  async execute (id: string) {
-    const job = await this.publicationRepository.claim(id);
+  async execute (id: string, phase: PublicationPhase) {
+    const job = await this.publicationRepository.reserveForProcessing(id, phase);
 
     if (!job) return;
 
-    const now = Date.now();
     const { credential, schedule } = job;
 
-    if (!credential || !PublicationPolicy.canPublishWithCredential(job.accountActive, credential, schedule.date, now)) {
-      return this.publicationRepository.fail(job, 'A conta precisa ter uma credencial ativa para publicar.');
+    if (!credential || !PublicationPolicy.canPublishWithCredential(job.accountActive, credential, schedule.date, Date.now())) {
+      return this.publicationRepository.markFailed(job, 'A conta precisa ter uma credencial ativa para publicar.');
     }
 
-    const { video, approved, generationStatus } = await this.publicationExecutionReader.readVideo(job);
-    
-    if (video) {
-      if (!approved) return this.publicationRepository.fail(job, 'Use um vídeo aprovado da revisão atual do conteúdo.');
+    const { video, approved, scriptStatus, videoStatus } = await this.publicationExecutionReader.readPreparationState(job);
 
-      if (!schedule.videoId) await this.publicationRepository.markReady(job, video.id);
-    
+    if (phase === 'publication') {
+      if (scriptStatus !== 'READY' || videoStatus !== 'READY') return this.publicationRepository.releaseProcessing(job);
+
+      if (!video || !approved) {
+        return this.publicationRepository.markFailed(job, 'Use um vídeo aprovado da revisão atual do conteúdo.');
+      }
+
+      if (!schedule.videoId) await this.publicationRepository.attachApprovedVideo(job, video.id);
+
       return this.publishScheduledContentUseCase.execute(job, video.storageKey, credential);
     }
 
-    switch (PublicationPolicy.nextRenderStep(generationStatus, schedule.date, Date.now())) {
-      case 'expire':
-        return this.publicationRepository.fail(job, 'O prazo expirou antes de o vídeo ficar pronto.');
-      case 'reject-render':
-        return this.publicationRepository.fail(job, 'Não foi possível renderizar o vídeo.');
-      case 'request-render':
-        return this.prepareVideo(job, 'generate-script');
-      case 'submit-pending-render':
-        return this.prepareVideo(job, 'submit-pending');
-      case 'wait-for-video':
-        return this.publicationRepository.waitForVideo(job, PublicationPolicy.graceDeadline(schedule.date));
+    if (!PublicationPolicy.isWithinGraceWindow(schedule.date, Date.now())) {
+      return this.publicationRepository.markFailed(job, 'O prazo expirou antes de o vídeo ficar pronto.');
     }
-  }
 
-  private async prepareVideo (job: PublicationWork, mode: 'generate-script' | 'submit-pending') {
-    let generation: Awaited<ReturnType<GenerateVideoUseCase['ensureGenerationStarted']>>;
+    if (scriptStatus === 'FAILED') return this.publicationRepository.markFailed(job, 'Não foi possível gerar o roteiro.');
 
-    try {
-      generation = await this.generateVideoUseCase.ensureGenerationStarted({
-        companyId: job.companyId, contentId: job.schedule.contentId, mode,
-      });
-    } catch (error) {
-      if (error instanceof AppError && ['invalid', 'missing', 'conflict'].includes(error.kind)) {
-        return this.publicationRepository.fail(job, error.message);
+    if (videoStatus === 'FAILED') return this.publicationRepository.markFailed(job, 'Não foi possível renderizar o vídeo.');
+
+    const requestScript = scriptStatus === 'NOT_STARTED';
+    const requestVideo = scriptStatus === 'READY' && videoStatus === 'NOT_STARTED';
+
+    if (requestScript || requestVideo) {
+      const failureMessage = requestScript ? 'Não foi possível solicitar o roteiro.' : 'Não foi possível solicitar o render.';
+      const input = { companyId: job.companyId, contentId: schedule.contentId };
+      let generation: Awaited<ReturnType<GenerateVideoUseCase['requestVideo']>>;
+
+      try {
+        generation = requestScript ? await this.generateVideoUseCase.requestScript(input) : await this.generateVideoUseCase.requestVideo(input);
+      } catch (error) {
+        this.logger.warn(`Falha na preparação da publicação ${job.id}.`);
+        return this.publicationRepository.markFailed(job, error instanceof AppError ? error.message : failureMessage);
       }
 
-      this.logger.warn(`Reagendando a preparação da publicação ${job.id} após uma falha.`);
-      return this.publicationRepository.defer(job);
+      if (generation.status === 'FAILED') return this.publicationRepository.markFailed(job, failureMessage);
     }
 
-    if (generation.status === 'FAILED') {
-      return this.publicationRepository.fail(job, 'Não foi possível solicitar o render.');
-    }
-
-    const canProgress = generation.status === 'PENDING' || generation.status === 'READY';
-    const nextAttemptAt = canProgress ? new Date() : PublicationPolicy.graceDeadline(job.schedule.date);
-    
-    return this.publicationRepository.waitForVideo(job, nextAttemptAt);
+    return this.publicationRepository.releaseProcessing(job);
   }
 }

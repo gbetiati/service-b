@@ -26,11 +26,6 @@ export class PrismaMediaAssetRepository implements MediaAssetRepository {
     return rows.map(row => this.toDomain(row));
   }
 
-  async findByIds (ids: string[]) {
-    const rows = await this.prismaService.mediaAsset.findMany({ where: { id: { in: ids }, companyId: this.requestContext.companyId } });
-    return rows.map(row => this.toDomain(row));
-  }
-
   private toDomain (row: Row) {
     return new MediaAsset(row.id, row.companyId, row.productId, row.storageKey, row.contentType, row.bytes, row.createdAt, row.updatedAt);
   }

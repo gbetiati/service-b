@@ -5,14 +5,12 @@ import { Content } from '../../domain/entities/content.entity';
 import { ScriptProvider } from '../../domain/providers/script.provider';
 import { ContentRepository } from '../../domain/repositories/content.repository';
 import { CreateContentDto } from '../dto/create-content.dto';
-import { ContentCatalogService } from '../services/content-catalog.service';
 
 @Injectable()
 export class CreateContentUseCase {
   constructor(
     private readonly contentRepository: ContentRepository,
     private readonly requestContext: RequestContext,
-    private readonly contentCatalogService: ContentCatalogService,
     private readonly scriptProvider: ScriptProvider,
   ) { }
 
@@ -23,7 +21,7 @@ export class CreateContentUseCase {
       assets: dto.mediaAssetIds?.map((id, position) => new ContentAsset(position, id)) ?? [],
     });
 
-    const brief = await this.contentCatalogService.resolve(content);
+    const brief = content.buildScriptBrief(await this.contentRepository.findReferences(content));
 
     content.fields.aiScript = dto.aiScript ?? await this.scriptProvider.generate(brief);
 

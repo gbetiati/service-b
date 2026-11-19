@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { Webhook, type WebhookUnbrandedRequiredHeaders } from 'standardwebhooks';
 import { requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
-import { HandleScriptCompletedUseCase } from '../../application/use-cases/handle-script-completed.usecase';
+import { CompleteScriptGenerationUseCase } from '@/modules/video-generation/application/use-cases/complete-script-generation.usecase';
 
 const scriptEvents = new Set(['response.completed', 'response.failed', 'response.incomplete', 'response.cancelled']);
 type OpenAiEvent = { type?: string; data?: { id?: unknown } };
@@ -12,7 +12,7 @@ type OpenAiEvent = { type?: string; data?: { id?: unknown } };
 @Controller('webhooks/openai')
 export class OpenAiWebhookController {
   constructor(
-    private readonly handleScriptCompletedUseCase: HandleScriptCompletedUseCase,
+    private readonly completeScriptGenerationUseCase: CompleteScriptGenerationUseCase,
   ) {}
 
   @Post()
@@ -44,6 +44,6 @@ export class OpenAiWebhookController {
       throw new AppError('invalid', 'Webhook sem identificação da resposta da IA.');
     }
 
-    await this.handleScriptCompletedUseCase.execute(responseId);
+    await this.completeScriptGenerationUseCase.execute(responseId);
   }
 }

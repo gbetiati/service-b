@@ -3,7 +3,6 @@ import { AiModule } from '@/shared/libs/ai/ai.module';
 import { ExternalApiModule } from '@/shared/libs/http/external-api.module';
 import { StorageModule } from '@/shared/libs/storage/storage.module';
 import { ContentModule } from '../content/content.module';
-import { MediaAssetModule } from '../media-asset/media-asset.module';
 import { GenerateVideoUseCase } from './application/use-cases/generate-video.usecase';
 import { GetVideoGenerationStatusUseCase } from './application/use-cases/get-video-generation-status.usecase';
 import { CompleteScriptGenerationUseCase } from './application/use-cases/complete-script-generation.usecase';
@@ -17,7 +16,7 @@ import { CreatomateProvider } from './infra/providers/creatomate.provider';
 import { MultimodalVideoReviewProvider } from './infra/providers/multimodal-video-review.provider';
 
 @Module({
-  imports: [ContentModule, MediaAssetModule, StorageModule, ExternalApiModule, AiModule],
+  imports: [ContentModule, StorageModule, ExternalApiModule, AiModule],
   controllers: [VideoGenerationController],
   exports: [GenerateVideoUseCase, CompleteScriptGenerationUseCase, CompleteVideoGenerationUseCase],
   providers: [

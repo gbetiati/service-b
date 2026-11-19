@@ -2,27 +2,25 @@ import { Publication, PublicationWork } from '../entities/publication.entity';
 
 export type SavePublicationInput = {
   companyId: string; contentId: string; videoId?: string; socialAccountId: string;
-  date: Date; caption?: string; nextAttemptAt: Date;
+  date: Date; caption?: string;
 };
+
+export type PublicationPhase = 'preparation' | 'publication';
 
 export abstract class PublicationRepository {
   abstract save (input: SavePublicationInput): Promise<Publication>;
 
   abstract findById (id: string): Promise<Publication | null>;
 
-  abstract duePublicationIds (): Promise<{ id: string }[]>;
+  abstract findEligibleIds (phase: PublicationPhase): Promise<{ id: string }[]>;
 
-  abstract claim (id: string): Promise<PublicationWork | null>;
+  abstract reserveForProcessing (id: string, phase: PublicationPhase): Promise<PublicationWork | null>;
 
-  abstract waitForVideo (job: PublicationWork, nextAttemptAt: Date): Promise<void>;
+  abstract releaseProcessing (job: PublicationWork, containerId?: string): Promise<void>;
 
-  abstract resumeForContent (companyId: string, contentId: string, revision: number): Promise<void>;
+  abstract attachApprovedVideo (job: PublicationWork, videoId: string): Promise<void>;
 
-  abstract markReady (job: PublicationWork, videoId: string): Promise<void>;
+  abstract markPublished (job: PublicationWork, externalId?: string): Promise<void>;
 
-  abstract defer (job: PublicationWork, containerId?: string, nextAttemptAt?: Date): Promise<void>;
-
-  abstract succeed (job: PublicationWork, externalId?: string): Promise<void>;
-
-  abstract fail (job: PublicationWork, reason: string): Promise<void>;
+  abstract markFailed (job: PublicationWork, reason: string): Promise<void>;
 }

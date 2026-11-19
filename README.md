@@ -24,7 +24,6 @@ As rotas abaixo usam `Authorization: Bearer <accessToken>`. As rotas de cadastro
 | `POST` e `GET /brands` | Cadastra e lista marcas |
 | `POST` e `GET /campaigns` | Cadastra e lista campanhas ligadas a uma marca |
 | `POST` e `GET /campaign-rules` | Cadastra e lista regras de campanhas |
-| `POST` e `GET /product-categories` | Cadastra e lista categorias |
 | `POST` e `GET /products` | Cadastra e lista produtos da empresa |
 | `POST /products/:id/media` | Associa uma imagem JPEG, PNG ou WebP de até 10 MB ao produto. Use multipart com o campo `file` |
 | `GET /products/:id/media` e `GET /media-assets/:id/url` | Lista as imagens de um produto e emite uma URL temporária |
@@ -42,7 +41,7 @@ As rotas abaixo usam `Authorization: Bearer <accessToken>`. As rotas de cadastro
 | `POST /webhooks/creatomate` | Recebe a conclusão do render usando o segredo do webhook |
 | `GET /publications/:id` | Consulta o status do agendamento e da publicação |
 
-Cadastros de marca, campanha, regra, categoria e produto também têm consulta por ID em suas respectivas rotas.
+Cadastros de marca, campanha, regra e produto também têm consulta por ID em suas respectivas rotas.
 
 ## Integrações
 
@@ -53,11 +52,9 @@ Cadastros de marca, campanha, regra, categoria e produto também têm consulta p
 
 ## Publicação agendada
 
-O cron consulta o PostgreSQL a cada cinco segundos e chama o orquestrador para os agendamentos com `nextAttemptAt` vencido. A reserva no banco coordena o processamento entre instâncias. Ao agendar sem `videoId`, a primeira tentativa de preparação fica marcada para cinco minutos antes, ou assim que possível para agendamentos mais próximos.
+Dois crons consultam o PostgreSQL a cada cinco segundos. A preparação fica elegível cinco minutos antes do horário. Ela pede o roteiro à OpenAI se ainda não houver roteiro pronto e, quando o roteiro fica `READY`, pede o vídeo ao Creatomate. Os webhooks gravam cada resultado. O cron ignora as etapas em andamento até a conclusão ou a expiração do prazo.
 
-O orquestrador valida a conta, resolve o contexto editorial e solicita o roteiro em background. O webhook da OpenAI confirma o resultado, salva o roteiro e libera a próxima tentativa para enviar ao Creatomate. O webhook do Creatomate baixa o MP4, roda a revisão e, se aprovado, marca o conteúdo como `READY` e libera a etapa de publicação. A geração existente da revisão atual é reaproveitada, e callbacks duplicados são tratados pelo estado persistido.
-
-O Instagram pode preparar o container antes da data agendada. A publicação ocorre a partir do horário escolhido, com até 30 minutos para concluir em caso de atraso.
+O cron de publicação busca conteúdo com `scriptStatus` e `videoStatus` em `READY`, a partir do horário agendado, e verifica se o vídeo da revisão atual foi aprovado. Ele cria o container do Instagram e volta a consultar nos próximos ciclos enquanto o processamento estiver pendente. A reserva atômica no banco evita que duas instâncias executem a mesma publicação. Erros definitivos ou a expiração da janela de 30 minutos encerram a publicação como `FAILED`.
 
 ## Testes
 

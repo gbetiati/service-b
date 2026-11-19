@@ -3,12 +3,12 @@ import { Body, Controller, HttpCode, Post, Query } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
-import { HandleVideoRenderCompletedUseCase } from '../../application/use-cases/handle-video-render-completed.usecase';
+import { CompleteVideoGenerationUseCase } from '@/modules/video-generation/application/use-cases/complete-video-generation.usecase';
 
 @Controller('webhooks/creatomate')
 export class CreatomateWebhookController {
   constructor(
-    private readonly handleVideoRenderCompletedUseCase: HandleVideoRenderCompletedUseCase,
+    private readonly completeVideoGenerationUseCase: CompleteVideoGenerationUseCase,
   ) {}
 
   @Post()
@@ -33,11 +33,11 @@ export class CreatomateWebhookController {
     const render = { submissionId: metadata, providerId: id };
     
     if (status === 'failed') {
-      return this.handleVideoRenderCompletedUseCase.execute({ ...render, outcome: { state: 'failed' } });
+      return this.completeVideoGenerationUseCase.execute({ ...render, outcome: { state: 'failed' } });
     }
 
     if (typeof url !== 'string' || !url) throw new AppError('invalid', 'Webhook sem a URL do vídeo.');
 
-    await this.handleVideoRenderCompletedUseCase.execute({ ...render, outcome: { state: 'ready', url } });
+    await this.completeVideoGenerationUseCase.execute({ ...render, outcome: { state: 'ready', url } });
   }
 }

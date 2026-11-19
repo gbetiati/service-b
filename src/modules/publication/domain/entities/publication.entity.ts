@@ -1,5 +1,5 @@
+import type { PreparationStatus } from '@/modules/content/domain/entities/content.entity';
 import { EncryptedToken } from '@/modules/social-account/domain/entities/social-credential.entity';
-import { VideoStatus } from '@/modules/video-generation/domain/entities/video-generation.entity';
 import { ContentScheduled } from './content-scheduled.entity';
 
 export type PublicationStatus = 'SCHEDULED' | 'PUBLISHING' | 'PUBLISHED' | 'FAILED';
@@ -18,14 +18,14 @@ export type Publication = {
 
 export type PublicationWork = Publication & {
   leaseUntil: Date;
-  nextAttemptAt: Date;
   accountExternalId: string;
   accountActive: boolean;
   credential: (EncryptedToken & { expiresAt: Date | null }) | null;
 };
 
 export type PublicationVideoState = {
-  generationStatus: VideoStatus | null;
+  scriptStatus: PreparationStatus;
+  videoStatus: PreparationStatus;
   approved: boolean;
   video: { id: string; storageKey: string } | null;
 };

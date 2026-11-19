@@ -6,6 +6,4 @@ export abstract class MediaAssetRepository {
   abstract findById (id: string): Promise<MediaAsset | null>;
 
   abstract findByProduct (productId: string): Promise<MediaAsset[]>;
-
-  abstract findByIds (ids: string[]): Promise<MediaAsset[]>;
 }

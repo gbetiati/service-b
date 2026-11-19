@@ -1,4 +1,4 @@
-import { Content } from '../entities/content.entity';
+import type { Content, ContentReferences } from '../entities/content.entity';
 
 export type ContentHistory = { revision: number; snapshot: unknown; createdAt: Date };
 
@@ -8,6 +8,8 @@ export abstract class ContentRepository {
   abstract update (content: Content): Promise<Content>;
 
   abstract findById (id: string): Promise<Content | null>;
+
+  abstract findReferences (content: Content): Promise<ContentReferences>;
 
   abstract findAll (offset: number, limit: number): Promise<Content[]>;
 

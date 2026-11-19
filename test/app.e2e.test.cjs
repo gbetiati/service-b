@@ -44,6 +44,10 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   });
   let scripts = 0;
   let scriptRequests = 0;
+  const expectedScriptBrief = {
+    brand: 'Marca A', objective: null, guidelines: 'Usar fotos reais.',
+    products: ['Produto A', 'Produto complementar'],
+  };
   const scriptResponses = new Map();
   const module = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(StorageProvider).useValue({
@@ -64,7 +68,7 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     .overrideProvider(VideoProvider).useValue({
       render: async input => {
         renders++;
-        assert.equal(input.script, 'Roteiro criado pela IA.');
+        assert.equal(input.script, failRender ? 'Nova revisão depois de publicar' : 'Roteiro criado pela IA.');
         assert.equal(input.imageUrls.length, 1);
 
         if (failRender) throw new Error('Render indisponível no teste.');
@@ -95,6 +99,8 @@ test('company onboarding through reviewed and scheduled video publication', { ti
           assert.equal(request.headers.Authorization, 'Bearer test-key');
 
           if (url.pathname === '/v1/chat/completions') {
+            const { messages } = JSON.parse(request.body);
+            assert.deepEqual(JSON.parse(messages[1].content), expectedScriptBrief);
             scripts++;
             return { choices: [{ message: { content: 'Roteiro criado pela IA.' } }] };
           }
@@ -103,7 +109,7 @@ test('company onboarding through reviewed and scheduled video publication', { ti
             const payload = JSON.parse(request.body);
             assert.equal(payload.background, true);
             assert.equal(payload.store, true);
-            assert.equal(JSON.parse(payload.input).brand, 'Marca A');
+            assert.deepEqual(JSON.parse(payload.input), expectedScriptBrief);
             const id = 'resp_' + ++scriptRequests;
             const response = { id, metadata: payload.metadata, status: 'queued' };
             scriptResponses.set(id, response);
@@ -228,8 +234,7 @@ test('company onboarding through reviewed and scheduled video publication', { ti
       db.product.create({ data: { companyId: b.companyId, brandId: brand.id, name: 'Vínculo inválido' } }),
       { code: 'P2003' },
     );
-    const category = await post('/product-categories', token, { name: 'Categoria A' });
-    const product = await post('/products', token, { brandId: brand.id, categoryId: category.id, name: 'Produto A' });
+    const product = await post('/products', token, { brandId: brand.id, name: 'Produto A' });
     const accessory = await post('/products', token, { brandId: brand.id, name: 'Produto complementar' });
     const campaign = await post('/campaigns', token, { brandId: brand.id, name: 'Campanha A' });
     const rules = await post('/campaign-rules', token, { campaingId: campaign.id, name: 'Regra A', guidelines: 'Usar fotos reais.' });
@@ -269,14 +274,14 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     assert.notEqual(credential.encryptedValue, 'instagram-long-token');
     assert.equal(account.encryptedValue, undefined);
 
+    await db.content.update({ where: { id: content.id }, data: { aiScript: '', scriptStatus: 'NOT_STARTED' } });
     const scheduledAt = new Date(Date.now() + 5 * 60_000 + 2000);
     const publication = await post('/publications', token, {
       contentId: content.id, socialAccountId: account.id, date: scheduledAt.toISOString(),
     });
     assert.equal(publication.status, 'SCHEDULED');
     assert.equal(publication.schedule.videoId, null);
-    const pending = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
-    assert.equal(pending.nextAttemptAt.getTime(), scheduledAt.getTime() - 5 * 60_000);
+    assert.equal(new Date(publication.schedule.date).getTime(), scheduledAt.getTime());
     await get('/publications/' + publication.id, other, 404);
     await patch({ body: { revision: 2, aiScript: 'Mudança durante agendamento' }, status: 409 });
 
@@ -287,7 +292,10 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     assert.equal(scripts, 1);
     assert.equal(scriptRequests, 1);
     assert.equal(renders, 0);
-    assert.equal((await get('/contents/' + content.id, token)).aiScript, 'Roteiro revisado.');
+    const writing = await get('/contents/' + content.id, token);
+    assert.equal(writing.aiScript, '');
+    assert.equal(writing.scriptStatus, 'PENDING');
+    assert.equal(writing.videoStatus, 'NOT_STARTED');
 
     const response = scriptResponses.get('resp_1');
     assert.equal(response.metadata.script_submission_id, awaitingScript.scriptSubmissionId);
@@ -308,36 +316,41 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     assert.equal(scripts, 1);
     assert.equal(scriptRequests, 1);
     assert.equal(renders, 1);
-    assert.equal((await get('/contents/' + content.id, token)).aiScript, 'Roteiro criado pela IA.');
+    const rendering = await get('/contents/' + content.id, token);
+    assert.equal(rendering.aiScript, 'Roteiro criado pela IA.');
+    assert.equal(rendering.scriptStatus, 'READY');
+    assert.equal(rendering.videoStatus, 'PENDING');
     await get('/video-generations/' + generation.id, other, 404);
-    const renderNotification = {
+    const renderWebhookBody = {
       id: generation.providerId, metadata: generation.submissionId, status: 'succeeded', url: 'https://cdn.invalid/render.mp4',
     };
-    await post('/webhooks/creatomate?token=invalid', undefined, renderNotification, 401);
+    await post('/webhooks/creatomate?token=invalid', undefined, renderWebhookBody, 401);
     assert.equal((await get('/video-generations/' + generation.id, token)).status, 'RENDERING');
 
     const webhook = '/webhooks/creatomate?token=' + process.env.CREATOMATE_WEBHOOK_SECRET;
-    const completion = post(webhook, undefined, renderNotification, 204);
+    const completion = post(webhook, undefined, renderWebhookBody, 204);
     try {
       await Promise.race([reviewStarted, completion.then(() => assert.fail('O webhook deve aguardar a revisão.'))]);
-      await post(webhook, undefined, renderNotification, 503);
+      await post(webhook, undefined, renderWebhookBody, 503);
     } finally {
       releaseReview();
       await completion;
     }
-    await post(webhook, undefined, renderNotification, 204);
+    await post(webhook, undefined, renderWebhookBody, 204);
     assert.equal(reviews, 1);
     const render = await poll(() => get('/video-generations/' + generation.id, token), value => value.status === 'READY');
     assert.equal(render.video.review.status, 'APPROVED');
-    assert.equal((await get('/contents/' + content.id, token)).status, 'READY');
+    const prepared = await get('/contents/' + content.id, token);
+    assert.equal(prepared.status, 'READY');
+    assert.equal(prepared.scriptStatus, 'READY');
+    assert.equal(prepared.videoStatus, 'READY');
 
-    const ready = await poll(() => get('/publications/' + publication.id, token), value => !!value.containerId);
-    assert.equal(ready.schedule.videoId, render.video.id);
-    assert.equal(ready.schedule.status, 'READY');
+    assert.equal((await get('/publications/' + publication.id, token)).containerId, null);
     assert.equal(publishes, 0);
     // Advance the schedule without making the integration test wait five minutes.
-    await db.contentScheduled.update({ where: { id: ready.schedule.id }, data: { date: new Date() } });
-    await db.publication.update({ where: { id: publication.id }, data: { nextAttemptAt: new Date() } });
+    await db.contentScheduled.update({ where: { id: publication.schedule.id }, data: { date: new Date() } });
+    const ready = await poll(() => get('/publications/' + publication.id, token), value => !!value.containerId);
+    assert.equal(ready.schedule.videoId, render.video.id);
     const published = await poll(() => get('/publications/' + publication.id, token), value => value.status === 'PUBLISHED');
     assert.equal(published.externalId, 'test-reel');
     assert.equal(published.schedule.status, 'APPROVED');
@@ -347,9 +360,13 @@ test('company onboarding through reviewed and scheduled video publication', { ti
       contentId: content.id, videoId: render.video.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
     }, 409);
 
-    const pendingRender = await db.videoGeneration.create({
-      data: { companyId: a.companyId, contentId: content.id, revision: 3, input: generation.input },
-    });
+    await deliverScriptWebhook(scriptEvent);
+    await post(webhook, undefined, renderWebhookBody, 204);
+    const revised = await get('/contents/' + content.id, token);
+    assert.equal(revised.aiScript, 'Nova revisão depois de publicar');
+    assert.equal(revised.scriptStatus, 'READY');
+    assert.equal(revised.videoStatus, 'NOT_STARTED');
+
     failRender = true;
     const pendingPublication = await post('/publications', token, {
       contentId: content.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
@@ -358,12 +375,15 @@ test('company onboarding through reviewed and scheduled video publication', { ti
       () => get('/publications/' + pendingPublication.id, token), value => value.status === 'FAILED',
     );
     assert.equal(failedPublication.error, 'Não foi possível solicitar o render.');
-    assert.equal((await get('/video-generations/' + pendingRender.id, token)).status, 'FAILED');
+    const videoFailure = await get('/contents/' + content.id, token);
+    assert.equal(videoFailure.scriptStatus, 'READY');
+    assert.equal(videoFailure.videoStatus, 'FAILED');
     assert.equal(renders, 2);
     assert.equal(scripts, 1);
     assert.equal(scriptRequests, 1);
 
     await patch({ body: { revision: 3, aiScript: 'Roteiro da revisão seguinte.' } });
+    await db.content.update({ where: { id: content.id }, data: { aiScript: '', scriptStatus: 'NOT_STARTED' } });
     const scriptFailurePublication = await post('/publications', token, {
       contentId: content.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
     });
@@ -378,7 +398,10 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     const rejected = await poll(
       () => get('/publications/' + scriptFailurePublication.id, token), value => value.status === 'FAILED',
     );
-    assert.match(rejected.error, /roteiro|renderizar/);
+    assert.match(rejected.error, /roteiro/);
+    const scriptFailure = await get('/contents/' + content.id, token);
+    assert.equal(scriptFailure.scriptStatus, 'FAILED');
+    assert.equal(scriptFailure.videoStatus, 'NOT_STARTED');
     assert.equal(renders, 2);
     assert.equal(publishes, 1);
   } finally {
@@ -390,11 +413,11 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   }
 });
 
-test('publication repository claims one worker at a time and preserves a concurrent render callback', async () => {
+test('publication repository separates phases and claims one worker at a time', async () => {
   const { PrismaService }= require('../dist/prisma/prisma.service');
   const { RequestContext } = require('../dist/shared/core/request-context/request-context');
   const { PrismaPublicationRepository } = require('../dist/modules/publication/infra/prisma/publication.prisma-repository');
-  const { CLAIM_LEASE_MS, PUBLICATION_GRACE_MS } = require('../dist/modules/publication/domain/entities/publication-timing');
+  const { CLAIM_LEASE_MS } = require('../dist/modules/publication/domain/entities/publication-timing');
   assert.ok(process.env.TEST_DATABASE_URL, 'Configure TEST_DATABASE_URL with a dedicated test instance.');
   const db = new PrismaService({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const repository = new PrismaPublicationRepository(db, new RequestContext());
@@ -418,41 +441,39 @@ test('publication repository claims one worker at a time and preserves a concurr
     const start = Date.now();
     const publication = await repository.save({
       companyId, contentId: content.id, socialAccountId: account.id,
-      date: new Date(start + 60_000), nextAttemptAt: new Date(start - 1000),
+      date: new Date(start + 60_000),
     });
-    const claims = await Promise.all([repository.claim(publication.id), repository.claim(publication.id)]);
+    const claims = await Promise.all([repository.reserveForProcessing(publication.id, 'preparation'), repository.reserveForProcessing(publication.id, 'preparation')]);
     assert.equal(claims.filter(Boolean).length, 1);
     const originalClaim = claims.find(Boolean);
     assert.ok(originalClaim.leaseUntil.getTime() >= start + CLAIM_LEASE_MS);
-    assert.equal(await repository.claim(publication.id), null);
+    assert.equal(await repository.reserveForProcessing(publication.id, 'preparation'), null);
 
     await db.publication.update({ where: { id: publication.id }, data: { leaseUntil: new Date(start - 1) } });
     await delay(2);
-    const reclaim = await repository.claim(publication.id);
+    const reclaim = await repository.reserveForProcessing(publication.id, 'preparation');
     assert.ok(reclaim);
-    await repository.defer(originalClaim, 'stale-worker');
+    await repository.releaseProcessing(originalClaim, 'stale-worker');
     const stillOwned = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
     assert.equal(stillOwned.containerId, null);
     assert.deepEqual(stillOwned.leaseUntil, reclaim.leaseUntil);
 
-    const deadline = new Date(publication.schedule.date.getTime() + PUBLICATION_GRACE_MS);
-    await repository.resumeForContent(companyId, content.id, content.revision + 1);
-    await repository.waitForVideo(reclaim, deadline);
-    const waiting = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
-    assert.deepEqual(waiting.nextAttemptAt, deadline);
-    assert.equal(waiting.leaseUntil, null);
-    assert.equal(await repository.claim(publication.id), null);
+    await db.content.update({ where: { id: content.id }, data: { scriptStatus: 'PENDING' } });
+    await repository.releaseProcessing(reclaim);
+    assert.deepEqual(await repository.findEligibleIds('preparation'), []);
+    assert.deepEqual(await repository.findEligibleIds('publication'), []);
 
-    await repository.resumeForContent(companyId, content.id, content.revision);
-    const woken = await repository.claim(publication.id);
-    assert.ok(woken);
-    await repository.resumeForContent(companyId, content.id, content.revision);
-    await repository.waitForVideo(woken, deadline);
+    await db.content.update({ where: { id: content.id }, data: { scriptStatus: 'READY' } });
+    assert.deepEqual(await repository.findEligibleIds('preparation'), [{ id: publication.id }]);
+    assert.deepEqual(await repository.findEligibleIds('publication'), []);
 
-    const resumed = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
-    assert.ok(resumed.nextAttemptAt.getTime() <= Date.now());
-    assert.equal(resumed.leaseUntil, null);
-    assert.ok(await repository.claim(publication.id));
+    await db.content.update({ where: { id: content.id }, data: { videoStatus: 'READY' } });
+    assert.deepEqual(await repository.findEligibleIds('preparation'), []);
+    assert.deepEqual(await repository.findEligibleIds('publication'), []);
+    await db.contentScheduled.update({ where: { id: publication.schedule.id }, data: { date: new Date(start - 1) } });
+    assert.deepEqual(await repository.findEligibleIds('publication'), [{ id: publication.id }]);
+    assert.equal(await repository.reserveForProcessing(publication.id, 'preparation'), null);
+    assert.ok(await repository.reserveForProcessing(publication.id, 'publication'));
   } finally {
     try {
       if (companyId) await db.company.delete({ where: { id: companyId } });
