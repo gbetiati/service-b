@@ -7,37 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum ContentStatus {
-  APPROVED
-  REPROVED
-  WAITING
-  ERROR
-}
-
-enum VideoStatus {
-  PENDING
-  SUBMITTING
-  RENDERING
-  READY
-  FAILED
-}
-
-enum SocialPlatform {
-  INSTAGRAM
-}
-
-enum SocialAccountStatus {
-  ACTIVE
-  DISCONNECTED
-}
-
-enum PublicationStatus {
-  SCHEDULED
-  PUBLISHING
-  PUBLISHED
-  FAILED
-}
-
 model Company {
   id          String             @id @default(uuid())
   name        String
@@ -69,6 +38,49 @@ model User {
 
   @@unique([companyId, id])
   @@map("users")
+}
+
+model OAuthState {
+  hash      String   @id
+  companyId String
+  userId    String
+  user      User     @relation(fields: [companyId, userId], references: [companyId, id], onDelete: Cascade)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("oauth_states")
+}
+
+enum ContentStatus {
+  READY
+  APPROVED
+  REPROVED
+  WAITING
+  ERROR
+}
+
+enum VideoStatus {
+  PENDING
+  SUBMITTING
+  RENDERING
+  READY
+  FAILED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+}
+
+enum SocialAccountStatus {
+  ACTIVE
+  DISCONNECTED
+}
+
+enum PublicationStatus {
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
 }
 
 model Brand {
@@ -247,9 +259,9 @@ model VideoGeneration {
   revision    Int
   input       Json
   status      VideoStatus @default(PENDING)
+  submissionId String?    @unique
   providerId  String?     @unique
   error       String?
-  nextCheckAt DateTime    @default(now())
   leaseUntil  DateTime?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -257,7 +269,6 @@ model VideoGeneration {
 
   @@unique([companyId, contentId, revision])
   @@unique([companyId, contentId, id])
-  @@index([status, nextCheckAt])
   @@map("video_generations")
 }
 
@@ -321,24 +332,13 @@ model SocialCredential {
   @@map("social_credentials")
 }
 
-model OAuthState {
-  hash      String   @id
-  companyId String
-  userId    String
-  user      User     @relation(fields: [companyId, userId], references: [companyId, id], onDelete: Cascade)
-  expiresAt DateTime
-
-  @@index([expiresAt])
-  @@map("oauth_states")
-}
-
 model ContentScheduled {
   id          String        @id @default(uuid())
   companyId   String
   contentId   String
   content     Content       @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
-  videoId     String
-  video       VideoAsset    @relation(fields: [companyId, contentId, videoId], references: [companyId, contentId, id], onDelete: NoAction)
+  videoId     String?
+  video       VideoAsset?   @relation(fields: [companyId, contentId, videoId], references: [companyId, contentId, id], onDelete: NoAction)
   date        DateTime
   status      ContentStatus @default(WAITING)
   publication Publication?

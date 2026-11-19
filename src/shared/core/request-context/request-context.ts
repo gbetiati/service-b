@@ -6,10 +6,13 @@ export type RequestIdentity = { userId: string; companyId: string };
 
 @Injectable()
 export class RequestContext {
-  private readonly storage = new AsyncLocalStorage<{ identity?: RequestIdentity }>();
+  private readonly storage = new AsyncLocalStorage<{ identity?: RequestIdentity; companyId?: string }>();
 
   run<T>(callback: () => T): T
   { return this.storage.run({}, callback); }
+
+  runForCompany<T>(companyId: string, callback: () => T): T
+  { return this.storage.run({ companyId }, callback); }
 
   setIdentity(identity: RequestIdentity)
   {
@@ -24,5 +27,5 @@ export class RequestContext {
     return identity;
   }
   get userId() { return this.identity.userId; }
-  get companyId() { return this.identity.companyId; }
+  get companyId() { return this.storage.getStore()?.companyId ?? this.identity.companyId; }
 }

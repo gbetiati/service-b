@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { VideoAsset as AssetRow, VideoGeneration as Row } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -5,6 +6,7 @@ import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { VideoAsset, VideoReview } from '../../domain/entities/video-asset.entity';
 import { RenderInput, VideoGeneration } from '../../domain/entities/video-generation.entity';
+import { RenderNotification } from '../../domain/providers/video.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
 @Injectable()
@@ -22,16 +24,24 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
       if (content?.revision !== revision) throw new AppError('conflict', 'O conteúdo mudou antes de solicitar o render.');
       const key = { companyId, contentId, revision };
       const existing = await tx.videoGeneration.findUnique({ where: { companyId_contentId_revision: key } });
-      if (existing?.status === 'FAILED') {
-        await tx.content.updateMany({ where: { companyId, id: contentId, revision }, data: { status: 'WAITING' } });
-        return this.toDomain(await tx.videoGeneration.update({
-          where: { id: existing.id }, data: {
-            status: 'PENDING', providerId: null, error: null, leaseUntil: null, nextCheckAt: new Date(), createdAt: new Date(), input,
-          },
-        }));
-      }
-      return this.toDomain(existing ?? await tx.videoGeneration.create({ data: { ...key, input } }));
+      if (existing && existing.status !== 'FAILED') return this.toDomain(existing);
+      await tx.content.updateMany({
+        where: { companyId, id: contentId, revision }, data: { status: 'WAITING', aiScript: input.script },
+      });
+      const row = existing
+        ? await tx.videoGeneration.update({
+            where: { id: existing.id }, data: { status: 'PENDING', submissionId: null, providerId: null, error: null, leaseUntil: null, input },
+          })
+        : await tx.videoGeneration.create({ data: { ...key, input } });
+      return this.toDomain(row);
     });
+  }
+
+  async findCurrent(contentId: string, revision: number)
+  {
+    const companyId = this.requestContext.companyId;
+    const row = await this.prismaService.videoGeneration.findUnique({ where: { companyId_contentId_revision: { companyId, contentId, revision } } });
+    return row && this.toDomain(row);
   }
 
   async findById(id: string)
@@ -42,35 +52,45 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
     return row && { generation: this.toDomain(row), video: row.video && this.toAsset(row.video) };
   }
 
-  async claim()
+  async claimSubmission(generation: VideoGeneration)
   {
-    const now = new Date();
-    const available = {
-      status: { in: ['PENDING', 'SUBMITTING', 'RENDERING'] as ('PENDING' | 'SUBMITTING' | 'RENDERING')[] },
-      nextCheckAt: { lte: now }, OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
-    };
-    const row = await this.prismaService.videoGeneration.findFirst({ where: available, orderBy: { nextCheckAt: 'asc' } });
-    if (!row) return null;
-    const leaseUntil = new Date(now.getTime() + (row.status === 'RENDERING' ? 600_000 : 120_000));
-    const claimed = await this.prismaService.videoGeneration.updateMany({
-      where: { ...available, id: row.id, status: row.status },
-      data: { leaseUntil, status: row.status === 'PENDING' ? 'SUBMITTING' : row.status },
+    const leaseUntil = new Date(Date.now() + 120_000);
+    const submissionId = randomUUID();
+    const changed = await this.prismaService.videoGeneration.updateMany({
+      where: { id: generation.id, companyId: generation.companyId, status: 'PENDING' },
+      data: { leaseUntil, submissionId, status: 'SUBMITTING' },
     });
-    return claimed.count ? this.toDomain({ ...row, leaseUntil }) : null;
+    return changed.count ? { ...generation, status: 'SUBMITTING' as const, leaseUntil, submissionId } : null;
   }
 
-  async submitted(job: VideoGeneration, providerId: string)
+  async submitted(generation: VideoGeneration, providerId: string)
   {
     await this.prismaService.videoGeneration.updateMany({
-      where: this.owned(job), data: { status: 'RENDERING', providerId, leaseUntil: null, nextCheckAt: new Date(Date.now() + 5000) },
+      where: this.owned(generation), data: { status: 'RENDERING', providerId, leaseUntil: null },
     });
   }
 
-  async postpone(job: VideoGeneration, delayMs: number)
+  async claimCompletion(notification: RenderNotification)
   {
-    await this.prismaService.videoGeneration.updateMany({
-      where: this.owned(job), data: { leaseUntil: null, nextCheckAt: new Date(Date.now() + delayMs) },
+    return this.prismaService.serializable(async tx => {
+      const row = await tx.videoGeneration.findUnique({ where: { submissionId: notification.submissionId } });
+      if (!row || (row.providerId && row.providerId !== notification.providerId)) return null;
+      if (row.status === 'READY' || row.status === 'FAILED') return { generation: this.toDomain(row), claimed: false };
+      if (row.status !== 'SUBMITTING' && row.status !== 'RENDERING') return null;
+      if (row.status === 'RENDERING' && row.leaseUntil && row.leaseUntil.getTime() > Date.now()) {
+        throw new AppError('unavailable', 'O resultado do render já está em processamento.');
+      }
+      const generation = await tx.videoGeneration.update({
+        where: { id: row.id },
+        data: { status: 'RENDERING', providerId: notification.providerId, leaseUntil: new Date(Date.now() + 600_000) },
+      });
+      return { generation: this.toDomain(generation), claimed: true };
     });
+  }
+
+  async release(generation: VideoGeneration)
+  {
+    await this.prismaService.videoGeneration.updateMany({ where: this.owned(generation), data: { leaseUntil: null } });
   }
 
   async fail(job: VideoGeneration, message: string)
@@ -91,7 +111,7 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
       const { review, ...data } = video;
       await tx.videoAsset.create({ data: { ...data, reviewStatus: review.status, review } });
       await tx.content.updateMany({
-        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: review.status },
+        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: review.status === 'APPROVED' ? 'READY' : 'REPROVED' },
       });
     });
   }

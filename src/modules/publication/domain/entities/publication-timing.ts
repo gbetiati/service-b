@@ -1,0 +1,2 @@
+export const PUBLICATION_PREPARATION_MS = 5 * 60_000;
+export const PUBLICATION_GRACE_MS = 30 * 60_000;

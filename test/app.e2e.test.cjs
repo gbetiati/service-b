@@ -11,6 +11,7 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   assert.ok(process.env.TEST_DATABASE_URL && process.env.TEST_REDIS_URL, 'Configure TEST_DATABASE_URL and TEST_REDIS_URL with dedicated test instances.');
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   process.env.REDIS_URL = process.env.TEST_REDIS_URL;
+  process.env.CREATOMATE_WEBHOOK_SECRET = randomUUID();
   process.env.JWT_SECRET = randomUUID() + randomUUID();
   process.env.SOCIAL_CREDENTIAL_KEY = Buffer.alloc(32, 42).toString('base64');
   process.env.INSTAGRAM_APP_ID = 'test-app';
@@ -28,6 +29,13 @@ test('company onboarding through reviewed and scheduled video publication', { ti
 
   const objects = new Map();
   let publishes = 0;
+  let renders = 0;
+  let reviews = 0;
+  let signalReviewStarted;
+  let releaseReview;
+  const reviewStarted = new Promise(resolve => { signalReviewStarted = resolve; });
+  const reviewGate = new Promise(resolve => { releaseReview = resolve; });
+  let scripts = 0;
   const module = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(StorageProvider).useValue({
       put: async (key, body) => {
@@ -39,18 +47,21 @@ test('company onboarding through reviewed and scheduled video publication', { ti
       url: async key => 'https://storage.invalid/' + key,
       remove: async key => { objects.delete(key); },
     })
-    .overrideProvider(OpenAiService).useValue({ complete: async () => 'Roteiro criado pela IA.' })
+    .overrideProvider(OpenAiService).useValue({ complete: async () => { scripts++; return 'Roteiro criado pela IA.'; } })
     .overrideProvider(VideoProvider).useValue({
       render: async input => {
-        assert.equal(input.script, 'Roteiro revisado.');
+        renders++;
+        assert.equal(input.script, 'Roteiro criado pela IA.');
         assert.equal(input.imageUrls.length, 1);
         return randomUUID();
       },
-      status: async () => ({ state: 'ready', url: 'https://cdn.invalid/render.mp4' }),
       download: async () => Readable.from([Buffer.from('test mp4')]),
     })
     .overrideProvider(VideoReviewProvider).useValue({
       review: async (video, render, references) => {
+        reviews++;
+        signalReviewStarted();
+        await reviewGate;
         const chunks = [];
         for await (const chunk of video) chunks.push(chunk);
         assert.equal(Buffer.concat(chunks).toString(), 'test mp4');
@@ -103,7 +114,8 @@ test('company onboarding through reviewed and scheduled video publication', { ti
         body = JSON.stringify(body);
       }
       const response = await fetch(base + route, { method, headers, body });
-      const data = await response.json();
+      const responseBody = await response.text();
+      const data = responseBody ? JSON.parse(responseBody) : undefined;
       assert.equal(response.status, status, method + ' ' + route + ' ' + JSON.stringify(data));
       return { data, cookie: response.headers.get('set-cookie')?.split(';')[0] };
     }
@@ -182,22 +194,52 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     assert.notEqual(credential.encryptedValue, 'instagram-long-token');
     assert.equal(account.encryptedValue, undefined);
 
-    const generation = await post('/contents/' + content.id + '/video-generations', token, undefined, 202);
-    const repeated = await post('/contents/' + content.id + '/video-generations', token, undefined, 202);
-    assert.equal(repeated.id, generation.id);
-    await get('/video-generations/' + generation.id, other, 404);
-    const render = await poll(() => get('/video-generations/' + generation.id, token), value => value.status === 'READY');
-    assert.equal(render.video.review.status, 'APPROVED');
-    assert.equal((await get('/contents/' + content.id, token)).status, 'APPROVED');
+    const scheduledAt = new Date(Date.now() + 5 * 60_000 + 2000);
     const publication = await post('/publications', token, {
-      contentId: content.id, videoId: render.video.id, socialAccountId: account.id,
-      date: new Date(Date.now() + 1000).toISOString(),
+      contentId: content.id, socialAccountId: account.id, date: scheduledAt.toISOString(),
     });
+    assert.equal(publication.status, 'SCHEDULED');
+    assert.equal(publication.schedule.videoId, null);
+    const pending = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
+    assert.equal(pending.nextAttemptAt.getTime(), scheduledAt.getTime() - 5 * 60_000);
     await get('/publications/' + publication.id, other, 404);
     await patch({ body: { revision: 2, aiScript: 'Mudança durante agendamento' }, status: 409 });
-    assert.equal(publication.status, 'SCHEDULED');
-    await poll(() => get('/publications/' + publication.id, token), value => !!value.containerId);
-    // Let the next BullMQ reconciliation recover the stored publication without waiting a minute.
+
+    const generation = await poll(
+      () => db.videoGeneration.findFirst({ where: { contentId: content.id, revision: 2 } }),
+      value => value?.status === 'RENDERING',
+    );
+    assert.equal(scripts, 2);
+    assert.equal(renders, 1);
+    assert.equal((await get('/contents/' + content.id, token)).aiScript, 'Roteiro criado pela IA.');
+    await get('/video-generations/' + generation.id, other, 404);
+    const renderNotification = {
+      id: generation.providerId, metadata: generation.submissionId, status: 'succeeded', url: 'https://cdn.invalid/render.mp4',
+    };
+    await post('/webhooks/creatomate?token=invalid', undefined, renderNotification, 401);
+    assert.equal((await get('/video-generations/' + generation.id, token)).status, 'RENDERING');
+
+    const webhook = '/webhooks/creatomate?token=' + process.env.CREATOMATE_WEBHOOK_SECRET;
+    const completion = post(webhook, undefined, renderNotification, 204);
+    try {
+      await Promise.race([reviewStarted, completion.then(() => assert.fail('O webhook deve aguardar a revisão.'))]);
+      await post(webhook, undefined, renderNotification, 503);
+    } finally {
+      releaseReview();
+      await completion;
+    }
+    await post(webhook, undefined, renderNotification, 204);
+    assert.equal(reviews, 1);
+    const render = await poll(() => get('/video-generations/' + generation.id, token), value => value.status === 'READY');
+    assert.equal(render.video.review.status, 'APPROVED');
+    assert.equal((await get('/contents/' + content.id, token)).status, 'READY');
+
+    const ready = await poll(() => get('/publications/' + publication.id, token), value => !!value.containerId);
+    assert.equal(ready.schedule.videoId, render.video.id);
+    assert.equal(ready.schedule.status, 'READY');
+    assert.equal(publishes, 0);
+    // Advance the schedule without making the integration test wait five minutes.
+    await db.contentScheduled.update({ where: { id: ready.schedule.id }, data: { date: new Date() } });
     await db.publication.update({ where: { id: publication.id }, data: { nextAttemptAt: new Date() } });
     const published = await poll(() => get('/publications/' + publication.id, token), value => value.status === 'PUBLISHED');
     assert.equal(published.externalId, 'test-reel');

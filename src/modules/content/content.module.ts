@@ -25,6 +25,6 @@ import { OpenAiScriptProvider } from './infra/providers/open-ai-script.provider'
     { provide: ContentRepository, useClass: PrismaContentRepository },
     { provide: ScriptProvider, useClass: OpenAiScriptProvider },
   ],
-  exports: [ContentRepository, ContentCatalogService],
+  exports: [ContentRepository, ContentCatalogService, ScriptProvider],
 })
 export class ContentModule {}

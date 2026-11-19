@@ -6,6 +6,7 @@ import { RequestContext } from '@/shared/core/request-context/request-context';
 import { AppError, requireRecord } from '@/shared/core/errors/app.error';
 import { ContentScheduled } from '../../domain/entities/content-scheduled.entity';
 import { Publication, PublicationWork } from '../../domain/entities/publication.entity';
+import { PUBLICATION_GRACE_MS, PUBLICATION_PREPARATION_MS } from '../../domain/entities/publication-timing';
 import { PublicationRepository, ScheduleInput } from '../../domain/repositories/publication.repository';
 
 const include = { schedule: true } satisfies Prisma.PublicationInclude;
@@ -27,13 +28,16 @@ export class PrismaPublicationRepository implements PublicationRepository {
 
     return this.prismaService.serializable(async tx => {
 
-      const video = requireRecord(await tx.videoAsset.findUnique({
-        where: { companyId_contentId_id: { companyId, contentId, id: videoId } }, include: { content: true },
-      }), 'Vídeo');
-
-      ContentScheduled.validate(
-        date, ContentStatus[video.content.status], video.content.revision, ContentStatus[video.reviewStatus], video.revision,
-      );
+      ContentScheduled.validateDate(date);
+      const content = requireRecord(await tx.content.findUnique({
+        where: { companyId_id: { companyId, id: contentId } },
+      }), 'Conteúdo');
+      if (videoId) {
+        const video = requireRecord(await tx.videoAsset.findUnique({
+          where: { companyId_contentId_id: { companyId, contentId, id: videoId } },
+        }), 'Vídeo');
+        ContentScheduled.validateVideo(ContentStatus[content.status], content.revision, ContentStatus[video.reviewStatus], video.revision);
+      }
 
       const account = requireRecord(await tx.socialAccount.findUnique({
         where: { companyId_id: { companyId, id: socialAccountId } },
@@ -50,14 +54,14 @@ export class PrismaPublicationRepository implements PublicationRepository {
         throw new AppError('conflict', 'Conecte uma conta com credencial válida na data programada.');
       }
 
-      const editorial = video.content.editorial as { caption?: string };
+      const editorial = content.editorial as { caption?: string };
       
       const schedule = await tx.contentScheduled.create({ 
         data: { companyId, contentId, videoId, date } 
       });
 
       const publication = await tx.publication.create({
-        data: { companyId, scheduleId: schedule.id, socialAccountId, caption: input.caption ?? editorial.caption, nextAttemptAt: date }, include,
+        data: { companyId, scheduleId: schedule.id, socialAccountId, caption: input.caption ?? editorial.caption, nextAttemptAt: videoId ? date : new Date(date.getTime() - PUBLICATION_PREPARATION_MS) }, include,
       });
 
       return this.toDomain(publication);
@@ -95,20 +99,64 @@ export class PrismaPublicationRepository implements PublicationRepository {
           socialAccount: { include: { credentials: { where: { kind: 'access_token' }, take: 1 } } },
         },
       });
-      const { content, video } = row.schedule;
+      const { content } = row.schedule;
+      const generation = row.schedule.video ? null : await tx.videoGeneration.findUnique({
+        where: { companyId_contentId_revision: { companyId: row.companyId, contentId: content.id, revision: content.revision } },
+        include: { video: true },
+      });
+      const video = row.schedule.video ?? generation?.video ?? null;
       return {
         ...this.toDomain(row), leaseUntil,
-        approved: content.status === 'APPROVED' && video.reviewStatus === 'APPROVED' && content.revision === video.revision,
-        videoKey: video.storageKey, accountExternalId: row.socialAccount.externalId, accountActive: row.socialAccount.status === 'ACTIVE',
+        generationStatus: generation?.status ?? null,
+        approved: !!video && ['APPROVED', 'READY'].includes(content.status) && video.reviewStatus === 'APPROVED' && content.revision === video.revision,
+        video, accountExternalId: row.socialAccount.externalId, accountActive: row.socialAccount.status === 'ACTIVE',
         credential: row.socialAccount.credentials[0] ?? null,
       };
     });
   }
 
-  async defer(job: PublicationWork, containerId?: string)
+  async waitForVideo(job: PublicationWork)
+  {
+    await this.prismaService.serializable(async tx => {
+      const { revision } = await tx.content.findUniqueOrThrow({
+        where: { companyId_id: { companyId: job.companyId, id: job.schedule.contentId } }, select: { revision: true },
+      });
+      const generation = await tx.videoGeneration.findUnique({
+        where: { companyId_contentId_revision: { companyId: job.companyId, contentId: job.schedule.contentId, revision } },
+        select: { status: true },
+      });
+      const completed = generation?.status === 'READY' || generation?.status === 'FAILED';
+      await tx.publication.updateMany({
+        where: this.owned(job),
+        data: { leaseUntil: null, nextAttemptAt: completed ? new Date() : new Date(job.schedule.date.getTime() + PUBLICATION_GRACE_MS) },
+      });
+    });
+  }
+
+  async resumeForContent(companyId: string, contentId: string, revision: number)
+  {
+    const now = new Date();
+    await this.prismaService.publication.updateMany({
+      where: {
+        companyId, status: statuses, nextAttemptAt: { gt: now },
+        schedule: { contentId, videoId: null, content: { revision }, date: { lte: new Date(now.getTime() + PUBLICATION_PREPARATION_MS) } },
+      },
+      data: { nextAttemptAt: now },
+    });
+  }
+
+  async markReady(job: PublicationWork, videoId: string)
+  {
+    await this.prismaService.contentScheduled.updateMany({
+      where: { id: job.schedule.id, companyId: job.companyId, publication: this.owned(job) },
+      data: { videoId, status: 'READY' },
+    });
+  }
+
+  async defer(job: PublicationWork, containerId?: string, nextAttemptAt = new Date(Date.now() + 60_000))
   {
     await this.prismaService.publication.updateMany({
-      where: this.owned(job), data: { leaseUntil: null, containerId, nextAttemptAt: new Date(Date.now() + 60_000) },
+      where: this.owned(job), data: { leaseUntil: null, containerId, nextAttemptAt },
     });
   }
 

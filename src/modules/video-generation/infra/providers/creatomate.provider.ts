@@ -4,7 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
 import { ExternalApiProvider } from '@/shared/libs/http/external-api.provider';
-import { RenderStatus, VideoProvider } from '../../domain/providers/video.provider';
+import { VideoProvider } from '../../domain/providers/video.provider';
 
 const api = 'https://api.creatomate.com/v2/renders';
 const maxBytes = 250 * 1024 * 1024;
@@ -12,10 +12,10 @@ const maxBytes = 250 * 1024 * 1024;
 @Injectable()
 export class CreatomateProvider implements VideoProvider {
   constructor(
-    private readonly http: ExternalApiProvider,
+    private readonly externalApiProvider: ExternalApiProvider,
   ) { }
 
-  async render(input: { script: string; imageUrls: string[] })
+  async render(input: { submissionId: string; script: string; imageUrls: string[] })
   {
     const modifications: Record<string, string> = { [requiredEnv('CREATOMATE_SCRIPT_ELEMENT')]: input.script };
     
@@ -25,24 +25,18 @@ export class CreatomateProvider implements VideoProvider {
 
     input.imageUrls.forEach((url, index) => { modifications[imageElements[index]] = url; });
 
-    const result = await this.http.json<{ id?: string; warnings?: string[] }[]>(api, {
+    const webhookUrl = new URL(requiredEnv('CREATOMATE_WEBHOOK_URL'));
+    if (webhookUrl.protocol !== 'https:') throw new AppError('unavailable', 'CREATOMATE_WEBHOOK_URL precisa usar HTTPS.');
+    webhookUrl.searchParams.set('token', requiredEnv('CREATOMATE_WEBHOOK_SECRET'));
+
+    const result = await this.externalApiProvider.json<{ id?: string } | { id?: string }[]>(api, {
       method: 'POST', headers: this.headers(),
-      body: JSON.stringify({ template_id: requiredEnv('CREATOMATE_TEMPLATE_ID'), output_format: 'mp4', modifications }),
+      body: JSON.stringify({ template_id: requiredEnv('CREATOMATE_TEMPLATE_ID'), output_format: 'mp4', modifications, webhook_url: webhookUrl.toString(), metadata: input.submissionId }),
     });
 
-    if (!result[0]?.id || result[0].warnings?.length) throw new AppError('upstream', 'Creatomate não aceitou o template enviado.');
-    return result[0].id;
-  }
-
-  async status(id: string): Promise<RenderStatus>
-  {
-    const render = await this.http.json<{ status: string; url?: string }>(api + '/' + encodeURIComponent(id), { headers: this.headers() });
-    
-    if (render.status === 'succeeded' && render.url) return { state: 'ready', url: render.url };
-    
-    if (render.status === 'failed') return { state: 'failed' };
-    
-    return { state: 'pending' };
+    const render = Array.isArray(result) ? result[0] : result;
+    if (!render?.id) throw new AppError('upstream', 'Creatomate não identificou o render solicitado.');
+    return render.id;
   }
 
   async download(source: string): Promise<Readable>
