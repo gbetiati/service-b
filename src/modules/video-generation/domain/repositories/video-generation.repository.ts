@@ -8,7 +8,7 @@ export abstract class VideoGenerationRepository {
 
   abstract findCurrent (contentId: string, revision: number): Promise<VideoGeneration | null>;
 
-  abstract findById (id: string): Promise<{ generation: VideoGeneration; video: VideoAsset | null } | null>;
+  abstract findById (id: string): Promise<{ generation: VideoGeneration; video: VideoAsset | null; captionedStorageKey?: string | null } | null>;
 
   abstract claimScriptSubmission (generation: VideoGeneration): Promise<(VideoGeneration & { scriptSubmissionId: string }) | null>;
 

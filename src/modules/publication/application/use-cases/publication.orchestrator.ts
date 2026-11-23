@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GenerateVideoUseCase } from '@/modules/video-generation/application/use-cases/generate-video.usecase';
+import { BurnVideoSubtitlesUseCase } from '@/modules/video-generation/application/use-cases/burn-video-subtitles.usecase';
+import { TranscribeVideoUseCase } from '@/modules/video-generation/application/use-cases/transcribe-video.usecase';
 import { AppError } from '@/shared/core/errors/app.error';
 import { PublicationExecutionReader } from '../ports/publication-execution-reader';
 import { PublicationPolicy } from '../../domain/entities/publication.policy';
@@ -15,11 +17,13 @@ export class PublicationOrchestrator {
     private readonly generateVideoUseCase: GenerateVideoUseCase,
     private readonly publishScheduledContentUseCase: PublishScheduledContentUseCase,
     private readonly publicationExecutionReader: PublicationExecutionReader,
-  ) {}
+    private readonly transcribeVideoUseCase: TranscribeVideoUseCase,
+    private readonly burnVideoSubtitlesUseCase: BurnVideoSubtitlesUseCase,
+  ) { }
 
-  async execute (id: string, phase: PublicationPhase) {
+  async execute(id: string, phase: PublicationPhase) {
     const job = await this.publicationRepository.reserveForProcessing(id, phase);
-    console.log('JOBB', job)
+    console.log('JOBB', job);
     if (!job) return;
 
     const { credential, schedule } = job;
@@ -28,49 +32,78 @@ export class PublicationOrchestrator {
       return this.publicationRepository.markFailed(job, 'A conta precisa ter uma credencial ativa para publicar.');
     }
 
-    const { video, approved, scriptStatus, videoStatus } = await this.publicationExecutionReader.readPreparationState(job);
+    const { video, scriptStatus, videoStatus, transcriptionStatus, subtitleStatus, revision } = await this.publicationExecutionReader.readPreparationState(job);
 
     if (phase === 'publication') {
-      // if (scriptStatus !== 'READY' || videoStatus !== 'READY') return this.publicationRepository.releaseProcessing(job);
-
-      // if (!video || !approved) {
-      //   return this.publicationRepository.markFailed(job, 'Use um vídeo aprovado da revisão atual do conteúdo.');
-      // }
-      if(!video) {
-        console.log('SEM VIDEO')
-        return
+      if (!video) {
+        console.log('SEM VIDEO');
+        return;
       }
       if (!schedule.videoId) await this.publicationRepository.attachApprovedVideo(job, video.id);
-
-
-      console.log('INDO PUBLICAR...', job, video.storageKey, credential)
-    //      return this.publishScheduledContentUseCase.execute(job, video.storageKey, credential);
+      // O envio ao publicador está desativado. O job segue pelas verificações de preparação.
+      console.log('INDO PUBLICAR...', job, video.storageKey, credential);
     }
 
     if (!PublicationPolicy.isWithinGraceWindow(schedule.date, Date.now())) {
+      if (transcriptionStatus === 'READY' && subtitleStatus !== 'READY') {
+        return this.publicationRepository.markFailed(job, 'O prazo expirou antes de as legendas ficarem prontas.');
+      }
+      if (videoStatus === 'READY' && transcriptionStatus !== 'READY') {
+        return this.publicationRepository.markFailed(job, 'O prazo expirou antes de a transcrição ficar pronta.');
+      }
       return this.publicationRepository.markFailed(job, 'O prazo expirou antes de o vídeo ficar pronto.');
     }
 
-    if (scriptStatus === 'FAILED') return this.publicationRepository.markFailed(job, 'Não foi possível gerar o roteiro.');
+    const input = { companyId: job.companyId, contentId: schedule.contentId };
+    const steps = [
+      {
+        status: scriptStatus,
+        prerequisitesReady: true,
+        request: () => this.generateVideoUseCase.requestScript(input),
+        failureMessage: 'Não foi possível gerar o roteiro.',
+        requestFailureMessage: 'Não foi possível solicitar o roteiro.',
+      },
+      {
+        status: videoStatus,
+        prerequisitesReady: scriptStatus === 'READY',
+        request: () => this.generateVideoUseCase.requestVideo(input),
+        failureMessage: 'Não foi possível renderizar o vídeo.',
+        requestFailureMessage: 'Não foi possível solicitar o render.',
+      },
+      {
+        status: transcriptionStatus,
+        prerequisitesReady: scriptStatus === 'READY' && videoStatus === 'READY',
+        request: () => this.transcribeVideoUseCase.execute({ ...input, revision }),
+        failureMessage: 'Não foi possível transcrever o vídeo.',
+        requestFailureMessage: 'Não foi possível solicitar a transcrição.',
+      },
+      {
+        status: subtitleStatus,
+        prerequisitesReady: transcriptionStatus === 'READY',
+        request: () => this.burnVideoSubtitlesUseCase.execute({ ...input, revision }),
+        failureMessage: 'Não foi possível renderizar as legendas.',
+        requestFailureMessage: 'Não foi possível preparar o MP4 legendado.',
+      },
+    ];
 
-    if (videoStatus === 'FAILED') return this.publicationRepository.markFailed(job, 'Não foi possível renderizar o vídeo.');
+    const failedStep = steps.find(({ status }) => status === 'FAILED');
+    if (failedStep) return this.publicationRepository.markFailed(job, failedStep.failureMessage);
 
-    const requestScript = scriptStatus === 'NOT_STARTED';
-    const requestVideo = scriptStatus === 'READY' && videoStatus === 'NOT_STARTED';
+    const nextStep = steps.find(({ status, prerequisitesReady }) => status === 'NOT_STARTED' && prerequisitesReady);
+    if (!nextStep) return this.publicationRepository.releaseProcessing(job);
 
-    if (requestScript || requestVideo) {
-      const failureMessage = requestScript ? 'Não foi possível solicitar o roteiro.' : 'Não foi possível solicitar o render.';
-      const input = { companyId: job.companyId, contentId: schedule.contentId };
-      let generation: Awaited<ReturnType<GenerateVideoUseCase['requestVideo']>>;
+    const { request, requestFailureMessage } = nextStep;
+    let generation: Awaited<ReturnType<typeof request>>;
 
-      try {
-        generation = requestScript ? await this.generateVideoUseCase.requestScript(input) : await this.generateVideoUseCase.requestVideo(input);
-      } catch (error) {
-        this.logger.warn(`Falha na preparação da publicação ${job.id}.`);
-        return this.publicationRepository.markFailed(job, error instanceof AppError ? error.message : failureMessage);
-      }
+    try {
+      generation = await request();
+    } catch (error) {
+      this.logger.warn(`Falha na preparação da publicação ${job.id}.`);
+      return this.publicationRepository.markFailed(job, error instanceof AppError ? error.message : requestFailureMessage);
+    }
 
-      if (generation.status === 'FAILED') return this.publicationRepository.markFailed(job, failureMessage);
+    if (generation.status === 'FAILED') {
+      return this.publicationRepository.markFailed(job, requestFailureMessage);
     }
 
     return this.publicationRepository.releaseProcessing(job);

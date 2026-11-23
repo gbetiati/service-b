@@ -112,7 +112,9 @@ export class PrismaPublicationRepository implements PublicationRepository {
 
   private eligible (phase: PublicationPhase, now: Date): Prisma.PublicationWhereInput {
     const available = { OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] };
-    const ready = { scriptStatus: 'READY', videoStatus: 'READY' } as const;
+    const videoReady = { scriptStatus: 'READY', videoStatus: 'READY' } as const;
+    const transcribed = { ...videoReady, transcriptionStatus: 'READY' } as const;
+    const ready = { ...transcribed, subtitleStatus: 'READY' } as const;
 
     if (phase === 'publication') {
       return { status: statuses, ...available, schedule: { date: { lte: now }, content: ready } };
@@ -128,6 +130,9 @@ export class PrismaPublicationRepository implements PublicationRepository {
           { content: { scriptStatus: { in: ['NOT_STARTED', 'FAILED'] } } },
           { content: { videoStatus: 'FAILED' } },
           { content: { scriptStatus: 'READY', videoStatus: 'NOT_STARTED' } },
+          { content: { ...videoReady, transcriptionStatus: { in: ['NOT_STARTED', 'FAILED'] } } },
+          { content: { ...transcribed, subtitleStatus: { in: ['NOT_STARTED', 'FAILED'] } } },
+          { content: { ...transcribed, subtitleStatus: 'PENDING', subtitleLeaseUntil: { lte: now } } },
         ],
       },
     };

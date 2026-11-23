@@ -472,9 +472,99 @@ test('publication repository separates phases and claims one worker at a time', 
     assert.deepEqual(await repository.findEligibleIds('publication'), []);
 
     await db.content.update({ where: { id: content.id }, data: { videoStatus: 'READY' } });
+    assert.deepEqual(await repository.findEligibleIds('preparation'), [{ id: publication.id }]);
+    await db.contentScheduled.update({ where: { id: publication.schedule.id }, data: { date: new Date(start - 1) } });
+    const { PrismaVideoTranscriptionRepository } = require(
+      '../dist/modules/video-generation/infra/prisma/video-transcription.prisma-repository'
+    );
+    const transcriptionRepository = new PrismaVideoTranscriptionRepository(db);
+    const input = { companyId, contentId: content.id, revision: content.revision };
+    const render = await db.videoGeneration.create({
+      data: { ...input, input: {}, status: 'READY' },
+    });
+    const storageKey = companyId + '/test.mp4';
+    await db.videoAsset.create({
+      data: {
+        ...input, generationId: render.id, storageKey, reviewStatus: 'APPROVED', review: {},
+      },
+    });
+    const { TranscribeVideoUseCase } = require('../dist/modules/video-generation/application/use-cases/transcribe-video.usecase');
+    const { ReplicateWhisperProvider } = require('../dist/modules/video-generation/infra/providers/replicate-whisper.provider');
+    const { ReplicateWebhookController } = require('../dist/modules/video-generation/infra/controllers/replicate-webhook.controller');
+    process.env.SERVICE_BASE_URL = 'https://service.invalid';
+    process.env.REPLICATE_API_TOKEN = 'test-replicate-token';
+    process.env.REPLICATE_WEBHOOK_SECRET = 'whsec_' + Buffer.from(randomUUID()).toString('base64');
+
+    const videoUrl = 'https://storage.invalid/' + storageKey;
+    const requests = [];
+    const provider = new ReplicateWhisperProvider({
+      json: async (url, request) => {
+        assert.equal(url, 'https://api.replicate.com/v1/predictions');
+        assert.equal(request.method, 'POST');
+        assert.equal(request.headers.Authorization, 'Bearer test-replicate-token');
+        const body = JSON.parse(request.body);
+        assert.match(body.version, /^openai\/whisper:[a-f0-9]{64}$/);
+        assert.deepEqual(body.input, { audio: videoUrl, language: 'pt', translate: false, transcription: 'srt' });
+        assert.deepEqual(body.webhook_events_filter, ['completed']);
+        requests.push(new URL(body.webhook));
+        return { id: 'whisper-test', status: 'starting' };
+      },
+    });
+    const transcribe = new TranscribeVideoUseCase(transcriptionRepository, provider, {
+      url: async key => {
+        assert.equal(key, storageKey);
+        return videoUrl;
+      },
+    });
+    await Promise.all([transcribe.execute(input), transcribe.execute(input)]);
+    assert.equal(requests.length, 1);
+    const [webhook] = requests;
+    assert.equal(webhook.pathname, '/webhooks/replicate/transcription');
     assert.deepEqual(await repository.findEligibleIds('preparation'), []);
     assert.deepEqual(await repository.findEligibleIds('publication'), []);
-    await db.contentScheduled.update({ where: { id: publication.schedule.id }, data: { date: new Date(start - 1) } });
+    const controller = new ReplicateWebhookController(null, null, transcribe);
+    const submissionId = webhook.searchParams.get('submissionId');
+    const send = (body, valid = true) => {
+      const rawBody = Buffer.from(JSON.stringify(body));
+      const webhookId = randomUUID();
+      const timestamp = new Date();
+      const signer = new Webhook(process.env.REPLICATE_WEBHOOK_SECRET);
+      const signature = signer.sign(webhookId, timestamp, rawBody);
+      const headers = {
+        'webhook-id': webhookId,
+        'webhook-timestamp': String(Math.floor(timestamp.getTime() / 1000)),
+        'webhook-signature': valid ? signature : 'v1,invalid',
+      };
+      return controller.receiveTranscription({ rawBody, header: name => headers[name] }, submissionId);
+    };
+    const srt = '1\n00:00:00,200 --> 00:00:02,500\nTexto do vídeo.\n';
+    const result = { id: 'whisper-test', status: 'succeeded', output: { transcription: srt } };
+    await assert.rejects(send(result, false), { status: 401 });
+    await send(result);
+    await send({ id: result.id, status: 'failed' });
+    const transcribed = await db.content.findUniqueOrThrow({ where: { id: content.id } });
+    assert.equal(transcribed.transcription, 'Texto do vídeo.');
+    assert.equal(transcribed.transcriptionStatus, 'READY');
+    assert.equal(transcribed.subtitleSrt, srt);
+    assert.deepEqual(await repository.findEligibleIds('publication'), []);
+
+    const { PrismaVideoSubtitlesRepository } = require('../dist/modules/video-generation/infra/prisma/video-subtitles.prisma-repository');
+    const { BurnVideoSubtitlesUseCase } = require('../dist/modules/video-generation/application/use-cases/burn-video-subtitles.usecase');
+    const subtitlesRepository = new PrismaVideoSubtitlesRepository(db);
+    const captionedStorageKey = companyId + '/test.captioned.mp4';
+    let burns = 0;
+    const burn = new BurnVideoSubtitlesUseCase(subtitlesRepository, {
+      burn: async (key, subtitles) => {
+        assert.equal(key, storageKey);
+        assert.equal(subtitles, srt);
+        burns++;
+        return captionedStorageKey;
+      },
+    });
+    await Promise.all([burn.execute(input), burn.execute(input)]);
+    assert.equal(burns, 1);
+    const captioned = await db.videoAsset.findFirstOrThrow({ where: { generationId: render.id } });
+    assert.equal(captioned.captionedStorageKey, captionedStorageKey);
     assert.deepEqual(await repository.findEligibleIds('publication'), [{ id: publication.id }]);
     assert.equal(await repository.reserveForProcessing(publication.id, 'preparation'), null);
     assert.ok(await repository.reserveForProcessing(publication.id, 'publication'));

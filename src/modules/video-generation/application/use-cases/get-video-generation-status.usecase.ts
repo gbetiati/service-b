@@ -11,11 +11,16 @@ export class GetVideoGenerationStatusUseCase {
   ) {}
 
   async execute (id: string) {
-    const { generation, video } = requireRecord(await this.videoGenerationRepository.findById(id), 'Render');
+    const { generation, video, captionedStorageKey } = requireRecord(await this.videoGenerationRepository.findById(id), 'Render');
     const { contentId, revision, status, error, createdAt, updatedAt } = generation;
     return {
       id, contentId, revision, status, error, createdAt, updatedAt,
-      video: video && { id: video.id, review: video.review, url: await this.storageProvider.url(video.storageKey) },
+      video: video && {
+        id: video.id,
+        review: video.review,
+        url: await this.storageProvider.url(video.storageKey),
+        captionedUrl: captionedStorageKey ? await this.storageProvider.url(captionedStorageKey) : null,
+      },
     };
   }
 }

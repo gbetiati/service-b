@@ -176,31 +176,37 @@ model MediaAsset {
 }
 
 model Content {
-  id              String                       @id @default(uuid())
-  companyId       String
-  campaingId      String
-  campaingRulesId String
-  productId       String
-  products        ContentProduct[]
-  aiScript        String
-  scriptStatus    PreparationStatus            @default(NOT_STARTED)
-  videoStatus     PreparationStatus            @default(NOT_STARTED)
-  status          ContentStatus                @default(WAITING)
-  editorial       Json                         @default("{}")
-  embedding       Unsupported("vector(1536)")?
-  revision        Int                          @default(1)
-  createdAt       DateTime                     @default(now())
-  updatedAt       DateTime                     @updatedAt
-  assets          ContentAsset[]
-  history         ContentHistory[]
-  renders         VideoGeneration[]
-  videos          VideoAsset[]
-  schedules       ContentScheduled[]
-  
-  company         Company                      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  campaing        Campaign                     @relation(fields: [companyId, campaingId], references: [companyId, id], onDelete: Cascade)
-  product         Product                      @relation(fields: [companyId, productId], references: [companyId, id], onDelete: NoAction)
-  campaingRules   CampaignRules                @relation(fields: [companyId, campaingId, campaingRulesId], references: [companyId, campaingId, id], onDelete: Cascade)
+  id                        String                       @id @default(uuid())
+  companyId                 String
+  campaingId                String
+  campaingRulesId           String
+  productId                 String
+  products                  ContentProduct[]
+  aiScript                  String
+  scriptStatus              PreparationStatus            @default(NOT_STARTED)
+  videoStatus               PreparationStatus            @default(NOT_STARTED)
+  transcriptionStatus       PreparationStatus            @default(NOT_STARTED)
+  transcriptionSubmissionId String?                      @unique
+  transcription             String?
+  subtitleSrt               String?
+  subtitleStatus            PreparationStatus @default(NOT_STARTED)
+  subtitleLeaseUntil        DateTime?
+  status                    ContentStatus                @default(WAITING)
+  editorial                 Json                         @default("{}")
+  embedding                 Unsupported("vector(1536)")?
+  revision                  Int                          @default(1)
+  createdAt                 DateTime                     @default(now())
+  updatedAt                 DateTime                     @updatedAt
+  assets                    ContentAsset[]
+  history                   ContentHistory[]
+  renders                   VideoGeneration[]
+  videos                    VideoAsset[]
+  schedules                 ContentScheduled[]
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaing      Campaign      @relation(fields: [companyId, campaingId], references: [companyId, id], onDelete: Cascade)
+  product       Product       @relation(fields: [companyId, productId], references: [companyId, id], onDelete: NoAction)
+  campaingRules CampaignRules @relation(fields: [companyId, campaingId, campaingRulesId], references: [companyId, campaingId, id], onDelete: Cascade)
 
   @@unique([companyId, id])
   @@index([companyId, createdAt])
@@ -248,21 +254,21 @@ model ContentHistory {
 }
 
 model VideoGeneration {
-  id          String      @id @default(uuid())
-  companyId   String
-  contentId   String
-  content     Content     @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
-  revision    Int
-  input       Json
-  status      VideoStatus @default(PENDING)
-  scriptSubmissionId String? @unique
-  submissionId String?    @unique
-  providerId  String?     @unique
-  error       String?
-  leaseUntil  DateTime?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  video       VideoAsset?
+  id                 String      @id @default(uuid())
+  companyId          String
+  contentId          String
+  content            Content     @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
+  revision           Int
+  input              Json
+  status             VideoStatus @default(PENDING)
+  scriptSubmissionId String?     @unique
+  submissionId       String?     @unique
+  providerId         String?     @unique
+  error              String?
+  leaseUntil         DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  video              VideoAsset?
 
   @@unique([companyId, contentId, revision])
   @@unique([companyId, contentId, id])
@@ -278,6 +284,7 @@ model VideoAsset {
   generation   VideoGeneration    @relation(fields: [companyId, contentId, generationId], references: [companyId, contentId, id], onDelete: Cascade)
   revision     Int
   storageKey   String             @unique
+  captionedStorageKey String?
   reviewStatus ContentStatus
   review       Json
   createdAt    DateTime           @default(now())

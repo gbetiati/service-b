@@ -57,7 +57,7 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
     const row = await this.prismaService.videoGeneration.findFirst({
       where: { companyId: this.requestContext.companyId, id }, include: { video: true },
     });
-    return row && { generation: this.toDomain(row), video: row.video && this.toAsset(row.video) };
+    return row && { generation: this.toDomain(row), video: row.video && this.toAsset(row.video), captionedStorageKey: row.video?.captionedStorageKey };
   }
 
   async claimScriptSubmission(generation: VideoGeneration) {

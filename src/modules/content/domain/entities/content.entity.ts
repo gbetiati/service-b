@@ -59,6 +59,8 @@ export class Content {
     readonly updatedAt: Date,
     readonly scriptStatus: PreparationStatus,
     readonly videoStatus: PreparationStatus,
+    readonly transcriptionStatus: PreparationStatus = 'NOT_STARTED',
+    readonly transcription: string | null = null,
   ) { }
 
   static create(companyId: string, fields: ContentFields) {

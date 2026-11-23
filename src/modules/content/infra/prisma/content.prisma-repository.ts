@@ -35,7 +35,11 @@ export class PrismaContentRepository implements ContentRepository {
     const companyId = this.requestContext.companyId;
     return this.prismaService.serializable(async tx => {
       const updated = await tx.content.updateMany({
-        where: { companyId, id, revision: revision - 1 }, data: { ...this.fields(content), revision, status: 'WAITING', videoStatus: 'NOT_STARTED' },
+        where: { companyId, id, revision: revision - 1 }, data: {
+          ...this.fields(content), revision, status: 'WAITING', videoStatus: 'NOT_STARTED',
+          transcriptionStatus: 'NOT_STARTED', transcriptionSubmissionId: null, transcription: null,
+          subtitleSrt: null, subtitleStatus: 'NOT_STARTED', subtitleLeaseUntil: null,
+        },
       });
 
       if (!updated.count) throw new AppError('conflict', 'A revisão informada está desatualizada.');
@@ -127,6 +131,6 @@ export class PrismaContentRepository implements ContentRepository {
       campaingId, campaingRulesId, productId, aiScript, editorial: editorial as Editorial,
       assets: row.assets.map(asset => new ContentAsset(asset.position, asset.mediaAssetId)),
       productIds: row.products.map(product => product.productId),
-    }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus);
+    }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus, row.transcriptionStatus, row.transcription);
   }
 }

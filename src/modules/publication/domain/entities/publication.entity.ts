@@ -26,6 +26,9 @@ export type PublicationWork = Publication & {
 export type PublicationVideoState = {
   scriptStatus: PreparationStatus;
   videoStatus: PreparationStatus;
+  transcriptionStatus: PreparationStatus;
+  subtitleStatus: PreparationStatus;
+  revision: number;
   approved: boolean;
   video: { id: string; storageKey: string } | null;
 };

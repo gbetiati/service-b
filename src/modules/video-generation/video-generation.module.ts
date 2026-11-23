@@ -8,6 +8,16 @@ import { GenerateVideoUseCase } from './application/use-cases/generate-video.use
 import { GetVideoGenerationStatusUseCase } from './application/use-cases/get-video-generation-status.usecase';
 import { CompleteScriptGenerationUseCase } from './application/use-cases/complete-script-generation.usecase';
 import { CompleteVideoGenerationUseCase } from './application/use-cases/complete-video-generation.usecase';
+import { BurnVideoSubtitlesUseCase } from './application/use-cases/burn-video-subtitles.usecase';
+import { VideoSubtitlesProvider } from './domain/providers/video-subtitles.provider';
+import { VideoSubtitlesRepository } from './domain/repositories/video-subtitles.repository';
+import { PrismaVideoSubtitlesRepository } from './infra/prisma/video-subtitles.prisma-repository';
+import { FfmpegVideoSubtitlesProvider } from './infra/providers/ffmpeg-video-subtitles.provider';
+import { TranscribeVideoUseCase } from './application/use-cases/transcribe-video.usecase';
+import { VideoTranscriptionProvider } from './domain/providers/video-transcription.provider';
+import { VideoTranscriptionRepository } from './domain/repositories/video-transcription.repository';
+import { PrismaVideoTranscriptionRepository } from './infra/prisma/video-transcription.prisma-repository';
+import { ReplicateWhisperProvider } from './infra/providers/replicate-whisper.provider';
 import { VIDEO_RENDER_PROVIDER, VideoProvider } from './domain/providers/video.provider';
 import { VideoReviewProvider } from './domain/providers/video-review.provider';
 import { VideoGenerationRepository } from './domain/repositories/video-generation.repository';
@@ -21,9 +31,14 @@ import { MultimodalVideoReviewProvider } from './infra/providers/multimodal-vide
 @Module({
   imports: [ConfigModule, ContentModule, StorageModule, ExternalApiModule, AiModule],
   controllers: [VideoGenerationController, ReplicateWebhookController],
-  exports: [GenerateVideoUseCase, CompleteScriptGenerationUseCase, CompleteVideoGenerationUseCase],
+  exports: [GenerateVideoUseCase, CompleteScriptGenerationUseCase, CompleteVideoGenerationUseCase, TranscribeVideoUseCase, BurnVideoSubtitlesUseCase],
   providers: [
     GenerateVideoUseCase, GetVideoGenerationStatusUseCase, CompleteScriptGenerationUseCase, CompleteVideoGenerationUseCase,
+    TranscribeVideoUseCase, BurnVideoSubtitlesUseCase,
+    { provide: VideoSubtitlesRepository, useClass: PrismaVideoSubtitlesRepository },
+    { provide: VideoSubtitlesProvider, useClass: FfmpegVideoSubtitlesProvider },
+    { provide: VideoTranscriptionRepository, useClass: PrismaVideoTranscriptionRepository },
+    { provide: VideoTranscriptionProvider, useClass: ReplicateWhisperProvider },
     { provide: VideoGenerationRepository, useClass: PrismaVideoGenerationRepository },
     { provide: VideoProvider, useClass: CreatomateProvider },
     ReplicateH3LiteProvider,
