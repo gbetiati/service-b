@@ -3,109 +3,100 @@ import { GenerateVideoUseCase } from '@/modules/video-generation/application/use
 import { BurnVideoSubtitlesUseCase } from '@/modules/video-generation/application/use-cases/burn-video-subtitles.usecase';
 import { TranscribeVideoUseCase } from '@/modules/video-generation/application/use-cases/transcribe-video.usecase';
 import { AppError } from '@/shared/core/errors/app.error';
-import { PublicationExecutionReader } from '../ports/publication-execution-reader';
+import { RequestContext } from '@/shared/core/request-context/request-context';
+import { ContentPreparationInput, ContentPreparationRepository } from '@/modules/content/domain/repositories/content-preparation.repository';
+import { UpdateContentUseCase } from '@/modules/content/application/use-cases/update-content.usecase';
 import { PublicationPolicy } from '../../domain/entities/publication.policy';
-import { PublicationPhase, PublicationRepository } from '../../domain/repositories/publication.repository';
-import { PublishScheduledContentUseCase } from './publish-scheduled-content.usecase';
 
 @Injectable()
 export class PublicationOrchestrator {
   private readonly logger = new Logger(PublicationOrchestrator.name);
 
   constructor(
-    private readonly publicationRepository: PublicationRepository,
     private readonly generateVideoUseCase: GenerateVideoUseCase,
-    private readonly publishScheduledContentUseCase: PublishScheduledContentUseCase,
-    private readonly publicationExecutionReader: PublicationExecutionReader,
+    private readonly contentPreparationRepository: ContentPreparationRepository,
     private readonly transcribeVideoUseCase: TranscribeVideoUseCase,
     private readonly burnVideoSubtitlesUseCase: BurnVideoSubtitlesUseCase,
+    private readonly requestContext: RequestContext,
+    private readonly updateContentUseCase: UpdateContentUseCase,
   ) { }
 
-  async execute(id: string, phase: PublicationPhase) {
-    const job = await this.publicationRepository.reserveForProcessing(id, phase);
-    console.log('JOBB', job);
-    if (!job) return;
+  async start(contentId: string, regenerateFromRevision?: number) {
+    this.logger.log(`Preparação solicitada para o conteúdo ${contentId}.`);
+    const input = { companyId: this.requestContext.companyId, contentId };
+    if (regenerateFromRevision !== undefined) {
+      const content = await this.updateContentUseCase.execute(contentId, { revision: regenerateFromRevision }, true);
+      return this.execute(input, content.revision);
+    }
+    await this.contentPreparationRepository.request(input);
+    return this.execute(input);
+  }
 
-    const { credential, schedule } = job;
+  async execute(input: ContentPreparationInput, expectedRevision?: number) {
+    const {
+      revision,
+      scriptStatus,
+      videoStatus,
+      transcriptionStatus,
+      subtitleStatus,
+      status,
+      video } = await this.contentPreparationRepository.read(input);
 
-    if (!credential || !PublicationPolicy.canPublishWithCredential(job.accountActive, credential, schedule.date, Date.now())) {
-      return this.publicationRepository.markFailed(job, 'A conta precisa ter uma credencial ativa para publicar.');
+    if (expectedRevision !== undefined && expectedRevision !== revision) {
+      throw new AppError('conflict', 'A revisão do conteúdo mudou durante a preparação.');
     }
 
-    const { video, scriptStatus, videoStatus, transcriptionStatus, subtitleStatus, revision } = await this.publicationExecutionReader.readPreparationState(job);
+    this.logger.log(`Conteúdo ${input.contentId}, revisão ${revision}: roteiro=${scriptStatus}, vídeo=${videoStatus}, transcrição=${transcriptionStatus}, legendas=${subtitleStatus}.`,);
 
-    if (phase === 'publication') {
-      if (!video) {
-        console.log('SEM VIDEO');
-        return;
-      }
-      if (!schedule.videoId) await this.publicationRepository.attachApprovedVideo(job, video.id);
-      // O envio ao publicador está desativado. O job segue pelas verificações de preparação.
-      console.log('INDO PUBLICAR...', job, video.storageKey, credential);
-    }
-
-    if (!PublicationPolicy.isWithinGraceWindow(schedule.date, Date.now())) {
-      if (transcriptionStatus === 'READY' && subtitleStatus !== 'READY') {
-        return this.publicationRepository.markFailed(job, 'O prazo expirou antes de as legendas ficarem prontas.');
-      }
-      if (videoStatus === 'READY' && transcriptionStatus !== 'READY') {
-        return this.publicationRepository.markFailed(job, 'O prazo expirou antes de a transcrição ficar pronta.');
-      }
-      return this.publicationRepository.markFailed(job, 'O prazo expirou antes de o vídeo ficar pronto.');
-    }
-
-    const input = { companyId: job.companyId, contentId: schedule.contentId };
     const steps = [
       {
         status: scriptStatus,
-        prerequisitesReady: true,
-        request: () => this.generateVideoUseCase.requestScript(input),
+        request: () => this.generateVideoUseCase.requestScript({ ...input, revision }),
         failureMessage: 'Não foi possível gerar o roteiro.',
-        requestFailureMessage: 'Não foi possível solicitar o roteiro.',
       },
       {
         status: videoStatus,
-        prerequisitesReady: scriptStatus === 'READY',
-        request: () => this.generateVideoUseCase.requestVideo(input),
+        request: () => this.generateVideoUseCase.requestVideo({ ...input, revision }),
         failureMessage: 'Não foi possível renderizar o vídeo.',
-        requestFailureMessage: 'Não foi possível solicitar o render.',
       },
       {
         status: transcriptionStatus,
-        prerequisitesReady: scriptStatus === 'READY' && videoStatus === 'READY',
         request: () => this.transcribeVideoUseCase.execute({ ...input, revision }),
         failureMessage: 'Não foi possível transcrever o vídeo.',
-        requestFailureMessage: 'Não foi possível solicitar a transcrição.',
       },
       {
         status: subtitleStatus,
-        prerequisitesReady: transcriptionStatus === 'READY',
         request: () => this.burnVideoSubtitlesUseCase.execute({ ...input, revision }),
         failureMessage: 'Não foi possível renderizar as legendas.',
-        requestFailureMessage: 'Não foi possível preparar o MP4 legendado.',
       },
     ];
 
-    const failedStep = steps.find(({ status }) => status === 'FAILED');
-    if (failedStep) return this.publicationRepository.markFailed(job, failedStep.failureMessage);
+    const fail = async (error: string) => {
+      await this.contentPreparationRepository.complete(input, revision);
+      return { contentId: input.contentId, revision, status: 'FAILED', error } as const;
+    };
 
-    const nextStep = steps.find(({ status, prerequisitesReady }) => status === 'NOT_STARTED' && prerequisitesReady);
-    if (!nextStep) return this.publicationRepository.releaseProcessing(job);
+    const failed = steps.find(step => step.status === 'FAILED');
+    if (failed) return fail(failed.failureMessage);
 
-    const { request, requestFailureMessage } = nextStep;
-    let generation: Awaited<ReturnType<typeof request>>;
-
-    try {
-      generation = await request();
-    } catch (error) {
-      this.logger.warn(`Falha na preparação da publicação ${job.id}.`);
-      return this.publicationRepository.markFailed(job, error instanceof AppError ? error.message : requestFailureMessage);
+    const next = steps.find(step => step.status !== 'READY');
+    if (!next) {
+      if (!video || !PublicationPolicy.isApprovedVideo(status, revision, video.reviewStatus, video.revision)) {
+        return fail('Use um vídeo aprovado da revisão atual do conteúdo.');
+      }
+      await this.contentPreparationRepository.complete(input, revision);
+      return { contentId: input.contentId, revision, status: 'READY', videoId: video.id } as const;
     }
 
-    if (generation.status === 'FAILED') {
-      return this.publicationRepository.markFailed(job, requestFailureMessage);
+    if (next.status === 'NOT_STARTED') {
+      try {
+        if ((await next.request()).status === 'FAILED') return fail(next.failureMessage);
+      } catch (error) {
+        const message = error instanceof AppError ? error.message : next.failureMessage;
+        this.logger.warn(`Conteúdo ${input.contentId}, revisão ${revision}: ${message}`);
+        return fail(message);
+      }
     }
-
-    return this.publicationRepository.releaseProcessing(job);
+    return { contentId: input.contentId, revision, status: 'PENDING' } as const;
   }
 }

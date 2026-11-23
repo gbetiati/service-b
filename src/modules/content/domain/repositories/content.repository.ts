@@ -5,7 +5,7 @@ export type ContentHistory = { revision: number; snapshot: unknown; createdAt: D
 export abstract class ContentRepository {
   abstract create (content: Content): Promise<Content>;
 
-  abstract update (content: Content): Promise<Content>;
+  abstract update (content: Content, publicationPreparationRequested?: boolean): Promise<Content>;
 
   abstract findById (id: string): Promise<Content | null>;
 

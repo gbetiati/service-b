@@ -6,13 +6,13 @@ import { VideoTranscriptionRepository } from '../../domain/repositories/video-tr
 @Injectable()
 export class TranscribeVideoUseCase {
   constructor(
-    private readonly repository: VideoTranscriptionRepository,
+    private readonly videoTranscriptionRepository: VideoTranscriptionRepository,
     private readonly videoTranscriptionProvider: VideoTranscriptionProvider,
     private readonly storageProvider: StorageProvider,
   ) {}
 
   async execute (input: Parameters<VideoTranscriptionRepository['claim']>[0]) {
-    const job = await this.repository.claim(input);
+    const job = await this.videoTranscriptionRepository.claim(input);
     if (!job) return { status: 'PENDING' } as const;
 
     try {
@@ -26,17 +26,17 @@ export class TranscribeVideoUseCase {
   }
 
   complete (submissionId: string, srt: string | null) {
-    if (srt === null) return this.repository.finish(submissionId, null);
+    if (srt === null) return this.videoTranscriptionRepository.finish(submissionId, null);
 
     const normalized = srt.trim().replace(/\r\n/g, '\n');
     const cues = normalized ? normalized.split(/\n[ \t]*\n/) : [];
     const lines = cues.map(cue => cue.split('\n'));
     const timing = /^\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}$/;
     if (lines.some(([index, range, text]) => !/^\d+$/.test(index) || !timing.test(range) || !text)) {
-      return this.repository.finish(submissionId, null);
+      return this.videoTranscriptionRepository.finish(submissionId, null);
     }
 
     const text = lines.map(cue => cue.slice(2).join(' ')).join(' ');
-    return this.repository.finish(submissionId, { text, srt: normalized ? normalized + '\n' : '' });
+    return this.videoTranscriptionRepository.finish(submissionId, { text, srt: normalized ? normalized + '\n' : '' });
   }
 }

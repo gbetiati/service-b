@@ -19,7 +19,7 @@ export class SchedulePublicationUseCase {
     const date = new Date(dto.date);
 
     return this.publicationSchedulingTransaction.run(companyId, async ({
-      findContent, findVideo, findSocialAccount, publicationRepository,
+      findContent, findVideo, findSocialAccount, contentScheduleRepository,
     }) => {
       ContentScheduled.validateDate(date);
       const content = requireRecord(await findContent(contentId), 'Conteúdo');
@@ -36,7 +36,7 @@ export class SchedulePublicationUseCase {
         throw new AppError('conflict', 'Conecte uma conta com credencial válida na data programada.');
       }
 
-      return publicationRepository.save({
+      return contentScheduleRepository.save({
         companyId, contentId, videoId, socialAccountId, date,
         caption: dto.caption ?? content.editorial.caption,
       });

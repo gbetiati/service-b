@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { StorageModule } from '@/shared/libs/storage/storage.module';
 import { VideoGenerationModule } from '../video-generation/video-generation.module';
 import { SocialAccountModule } from '../social-account/social-account.module';
-import { PublicationExecutionReader } from './application/ports/publication-execution-reader';
+import { ContentModule } from '../content/content.module';
+import { ContentScheduleRepository } from './domain/repositories/content-schedule.repository';
 import { PublicationSchedulingTransaction } from './application/ports/publication-scheduling-transaction';
 import { GetPublicationUseCase } from './application/use-cases/get-publication.usecase';
 import { PublicationOrchestrator } from './application/use-cases/publication.orchestrator';
@@ -12,19 +13,19 @@ import { PublicationRepository } from './domain/repositories/publication.reposit
 import { CreatomateWebhookController } from './infra/controllers/creatomate-webhook.controller';
 import { OpenAiWebhookController } from './infra/controllers/open-ai-webhook.controller';
 import { PublicationController } from './infra/controllers/publication.controller';
-import { PrismaPublicationExecutionReader } from './infra/prisma/prisma-publication-execution-reader';
+import { PrismaContentScheduleRepository } from './infra/prisma/prisma-content-schedule-repository';
 import { PrismaPublicationSchedulingTransaction } from './infra/prisma/prisma-publication-scheduling-transaction';
 import { PrismaPublicationRepository } from './infra/prisma/publication.prisma-repository';
 import { PublicationScheduler } from './infra/schedule/publication.scheduler';
 
 @Module({
-  imports: [SocialAccountModule, StorageModule, VideoGenerationModule],
+  imports: [ContentModule, SocialAccountModule, StorageModule, VideoGenerationModule],
   controllers: [PublicationController, OpenAiWebhookController, CreatomateWebhookController],
   providers: [
     GetPublicationUseCase, SchedulePublicationUseCase, PublishScheduledContentUseCase, PublicationOrchestrator,
-    PublicationScheduler, PrismaPublicationRepository,
+    PublicationScheduler, PrismaPublicationRepository, PrismaContentScheduleRepository,
     { provide: PublicationRepository, useExisting: PrismaPublicationRepository },
-    { provide: PublicationExecutionReader, useClass: PrismaPublicationExecutionReader },
+    { provide: ContentScheduleRepository, useExisting: PrismaContentScheduleRepository },
     { provide: PublicationSchedulingTransaction, useClass: PrismaPublicationSchedulingTransaction },
   ],
 })

@@ -5,8 +5,11 @@ import { ContentStatus } from '@/modules/content/domain/entities/content-status'
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { ContentScheduled } from '../../domain/entities/content-scheduled.entity';
 import { Publication, PublicationWork } from '../../domain/entities/publication.entity';
-import { CLAIM_LEASE_MS, PUBLICATION_CRON_BATCH_SIZE, PUBLICATION_GRACE_MS, PUBLICATION_PREPARATION_MS } from '../../domain/entities/publication-timing';
-import { PublicationPhase, PublicationRepository, SavePublicationInput } from '../../domain/repositories/publication.repository';
+import { CLAIM_LEASE_MS, PUBLICATION_CRON_BATCH_SIZE, PUBLICATION_GRACE_MS } from '../../domain/entities/publication-timing';
+import { PreparedPublicationContent, PublicationRepository } from '../../domain/repositories/publication.repository';
+
+import { preparationFailed, preparationReady } from '@/modules/content/infra/prisma/content-preparation.filters';
+import { pendingSchedule } from './prisma-content-schedule-repository';
 
 const include = { schedule: true } satisfies Prisma.PublicationInclude;
 type Row = Prisma.PublicationGetPayload<{ include: typeof include }>;
@@ -20,12 +23,40 @@ export class PrismaPublicationRepository implements PublicationRepository {
     private readonly requestContext: RequestContext,
   ) { }
 
-  save (input: SavePublicationInput, client: Prisma.TransactionClient = this.prismaService) {
-    const { companyId, contentId, videoId, socialAccountId, date, caption } = input;
-    return client.contentScheduled.create({
-      data: { companyId, contentId, videoId, date, publication: { create: { socialAccountId, caption } } },
-      include: { publication: true },
-    }).then(({ publication, ...schedule }) => this.toDomain({ ...publication!, schedule }));
+  async createFromPreparedContent ({ companyId, contentId, revision, videoId }: PreparedPublicationContent) {
+    await this.prismaService.serializable(async tx => {
+      const video = await tx.videoAsset.findFirst({
+        where: {
+          companyId, contentId, id: videoId, revision, reviewStatus: 'APPROVED',
+          content: { revision, ...preparationReady, status: { in: ['READY', 'APPROVED'] } },
+        },
+        select: { id: true },
+      });
+      if (!video) return;
+
+      const schedules = await tx.contentScheduled.findMany({
+        where: { ...pendingSchedule, companyId, contentId, date: { gt: new Date(Date.now() - PUBLICATION_GRACE_MS) } },
+        select: { id: true, videoId: true, socialAccountId: true, caption: true },
+      });
+      for (const schedule of schedules) {
+        if (!schedule.socialAccountId) continue;
+        const where = { companyId_id: { companyId, id: schedule.id } };
+        if (schedule.videoId && schedule.videoId !== video.id) {
+          await tx.contentScheduled.update({
+            where,
+            data: { status: 'ERROR', preparationError: 'Use um vídeo aprovado da revisão atual do conteúdo.' },
+          });
+          continue;
+        }
+        await tx.contentScheduled.update({
+          where,
+          data: {
+            status: 'READY', videoId: video.id,
+            publication: { create: { socialAccountId: schedule.socialAccountId, caption: schedule.caption } },
+          },
+        });
+      }
+    });
   }
 
   async findById (id: string) {
@@ -33,23 +64,23 @@ export class PrismaPublicationRepository implements PublicationRepository {
     return row && this.toDomain(row);
   }
 
-  findEligibleIds (phase: PublicationPhase) {
+  findEligibleIds () {
     const now = new Date();
     return this.prismaService.publication.findMany({
-      where: this.eligible(phase, now),
+      where: this.eligible(now),
       orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }], take: PUBLICATION_CRON_BATCH_SIZE, select: { id: true },
     });
   }
 
-  async reserveForProcessing (id: string, phase: PublicationPhase): Promise<PublicationWork | null> {
+  async reserveForProcessing (id: string): Promise<PublicationWork | null> {
     const now = new Date();
 
     const leaseUntil = new Date(now.getTime() + CLAIM_LEASE_MS);
 
     return this.prismaService.$transaction(async tx => {
       const claimed = await tx.publication.updateMany({
-        where: { id, ...this.eligible(phase, now) },
-        data: { status: phase === 'publication' ? 'PUBLISHING' : undefined, leaseUntil },
+        where: { id, ...this.eligible(now) },
+        data: { status: 'PUBLISHING', leaseUntil },
       });
 
       if (!claimed.count) return null;
@@ -110,32 +141,23 @@ export class PrismaPublicationRepository implements PublicationRepository {
     });
   }
 
-  private eligible (phase: PublicationPhase, now: Date): Prisma.PublicationWhereInput {
-    const available = { OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] };
-    const videoReady = { scriptStatus: 'READY', videoStatus: 'READY' } as const;
-    const transcribed = { ...videoReady, transcriptionStatus: 'READY' } as const;
-    const ready = { ...transcribed, subtitleStatus: 'READY' } as const;
-
-    if (phase === 'publication') {
-      return { status: statuses, ...available, schedule: { date: { lte: now }, content: ready } };
-    }
-
+  private eligible (now: Date): Prisma.PublicationWhereInput {
     return {
-      status: statuses, ...available,
+      status: statuses,
+      OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
       schedule: {
-        date: { lte: new Date(now.getTime() + PUBLICATION_PREPARATION_MS) },
-        content: { NOT: ready },
+        date: { lte: now },
         OR: [
+          { content: preparationReady },
+          { content: preparationFailed },
           { date: { lte: new Date(now.getTime() - PUBLICATION_GRACE_MS) } },
-          { content: { scriptStatus: { in: ['NOT_STARTED', 'FAILED'] } } },
-          { content: { videoStatus: 'FAILED' } },
-          { content: { scriptStatus: 'READY', videoStatus: 'NOT_STARTED' } },
-          { content: { ...videoReady, transcriptionStatus: { in: ['NOT_STARTED', 'FAILED'] } } },
-          { content: { ...transcribed, subtitleStatus: { in: ['NOT_STARTED', 'FAILED'] } } },
-          { content: { ...transcribed, subtitleStatus: 'PENDING', subtitleLeaseUntil: { lte: now } } },
         ],
       },
     };
+  }
+
+  private toContentScheduled ({ id, companyId, contentId, videoId, date, status, createdAt, updatedAt }: Row['schedule']) {
+    return new ContentScheduled(id, companyId, contentId, videoId, date, ContentStatus[status], createdAt, updatedAt);
   }
 
   private owned (job: PublicationWork) {
@@ -146,9 +168,7 @@ export class PrismaPublicationRepository implements PublicationRepository {
     const { id, companyId, status, socialAccountId, caption, containerId, externalId, error, schedule } = row;
     return {
       id, companyId, status, socialAccountId, caption, containerId, externalId, error,
-      schedule: new ContentScheduled(
-        schedule.id, companyId, schedule.contentId, schedule.videoId, schedule.date, ContentStatus[schedule.status], schedule.createdAt, schedule.updatedAt,
-      ),
+      schedule: this.toContentScheduled(schedule),
     };
   }
 }

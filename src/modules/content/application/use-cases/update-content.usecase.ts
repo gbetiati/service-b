@@ -10,7 +10,7 @@ export class UpdateContentUseCase {
     private readonly contentRepository: ContentRepository,
   ) {}
 
-  async execute (id: string, dto: UpdateContentDto) {
+  async execute (id: string, dto: UpdateContentDto, preparePublication = false) {
     const current = requireRecord(await this.contentRepository.findById(id), 'Conteúdo');
 
     if (dto.revision !== current.revision) throw new AppError('conflict', 'A revisão informada está desatualizada.');
@@ -23,6 +23,6 @@ export class UpdateContentUseCase {
       assets: dto.mediaAssetIds?.map((id, position) => new ContentAsset(position, id)) ?? fields.assets,
     });
     content.validateReferences(await this.contentRepository.findReferences(content));
-    return this.contentRepository.update(content);
+    return this.contentRepository.update(content, preparePublication);
   }
 }

@@ -30,7 +30,7 @@ export class PrismaContentRepository implements ContentRepository {
     });
   }
 
-  update (content: Content) {
+  update (content: Content, publicationPreparationRequested = false) {
     const { id, revision } = content;
     const companyId = this.requestContext.companyId;
     return this.prismaService.serializable(async tx => {
@@ -38,14 +38,20 @@ export class PrismaContentRepository implements ContentRepository {
         where: { companyId, id, revision: revision - 1 }, data: {
           ...this.fields(content), revision, status: 'WAITING', videoStatus: 'NOT_STARTED',
           transcriptionStatus: 'NOT_STARTED', transcriptionSubmissionId: null, transcription: null,
-          subtitleSrt: null, subtitleStatus: 'NOT_STARTED', subtitleLeaseUntil: null,
+          subtitleSrt: null, subtitleStatus: 'NOT_STARTED', subtitleLeaseUntil: null, publicationPreparationRequested,
         },
       });
 
       if (!updated.count) throw new AppError('conflict', 'A revisão informada está desatualizada.');
 
-      const active = await tx.publication.count({
-        where: { companyId, schedule: { contentId: id }, status: { in: ['SCHEDULED', 'PUBLISHING'] } },
+      const active = await tx.contentScheduled.count({
+        where: {
+          companyId, contentId: id,
+          OR: [
+            { status: 'WAITING', socialAccountId: { not: null }, publication: { is: null } },
+            { publication: { is: { status: { in: ['SCHEDULED', 'PUBLISHING'] } } } },
+          ],
+        },
       });
 
       if (active) throw new AppError('conflict', 'O conteúdo tem uma publicação em andamento.');
@@ -131,6 +137,6 @@ export class PrismaContentRepository implements ContentRepository {
       campaingId, campaingRulesId, productId, aiScript, editorial: editorial as Editorial,
       assets: row.assets.map(asset => new ContentAsset(asset.position, asset.mediaAssetId)),
       productIds: row.products.map(product => product.productId),
-    }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus, row.transcriptionStatus, row.transcription);
+    }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus, row.transcriptionStatus, row.transcription, row.subtitleStatus);
   }
 }

@@ -1,6 +1,14 @@
 import { ContentStatus } from '@/modules/content/domain/entities/content-status';
 import { PublicationPolicy } from './publication.policy';
+import type { PublicationStatus } from './publication.entity';
 import { AppError } from '@/shared/core/errors/app.error';
+
+export type PublicationSchedule = ContentScheduled & {
+  socialAccountId: string | null;
+  caption: string | null;
+  preparationError: string | null;
+  publication: { id: string; status: PublicationStatus } | null;
+};
 
 export class ContentScheduled {
   constructor(

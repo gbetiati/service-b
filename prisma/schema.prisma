@@ -191,6 +191,7 @@ model Content {
   subtitleSrt               String?
   subtitleStatus            PreparationStatus @default(NOT_STARTED)
   subtitleLeaseUntil        DateTime?
+  publicationPreparationRequested Boolean @default(false)
   status                    ContentStatus                @default(WAITING)
   editorial                 Json                         @default("{}")
   embedding                 Unsupported("vector(1536)")?
@@ -310,6 +311,7 @@ model SocialAccount {
   updatedAt     DateTime            @updatedAt
   credentials   SocialCredential[]
   publications  Publication[]
+  schedules     ContentScheduled[]
 
   @@unique([companyId, platform, accountHandle])
   @@unique([companyId, platform, externalId])
@@ -345,6 +347,10 @@ model ContentScheduled {
   video       VideoAsset?   @relation(fields: [companyId, contentId, videoId], references: [companyId, contentId, id], onDelete: NoAction)
   date        DateTime
   status      ContentStatus @default(WAITING)
+  socialAccountId String?
+  socialAccount SocialAccount? @relation(fields: [companyId, socialAccountId], references: [companyId, id], onDelete: NoAction)
+  caption String?
+  preparationError String?
   publication Publication?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

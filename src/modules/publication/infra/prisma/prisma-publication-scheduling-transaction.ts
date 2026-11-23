@@ -2,13 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { ContentStatus } from '@/modules/content/domain/entities/content-status';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PublicationSchedulingSession, PublicationSchedulingTransaction } from '../../application/ports/publication-scheduling-transaction';
-import { PrismaPublicationRepository } from './publication.prisma-repository';
+import { PrismaContentScheduleRepository } from './prisma-content-schedule-repository';
 
 @Injectable()
 export class PrismaPublicationSchedulingTransaction implements PublicationSchedulingTransaction {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly prismaPublicationRepository: PrismaPublicationRepository,
+    private readonly prismaContentScheduleRepository: PrismaContentScheduleRepository,
   ) {}
 
   run<T> (companyId: string, work: (session: PublicationSchedulingSession) => Promise<T>) {
@@ -42,8 +42,8 @@ export class PrismaPublicationSchedulingTransaction implements PublicationSchedu
         return account && { active: account.status === 'ACTIVE', credentials: account.credentials };
       },
 
-      publicationRepository: {
-        save: input => this.prismaPublicationRepository.save(input, tx),
+      contentScheduleRepository: {
+        save: input => this.prismaContentScheduleRepository.save(input, tx),
       },
     }));
   }

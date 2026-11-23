@@ -1,20 +1,16 @@
+import type { ContentPreparationInput } from '@/modules/content/domain/repositories/content-preparation.repository';
 import { Publication, PublicationWork } from '../entities/publication.entity';
 
-export type SavePublicationInput = {
-  companyId: string; contentId: string; videoId?: string; socialAccountId: string;
-  date: Date; caption?: string;
-};
-
-export type PublicationPhase = 'preparation' | 'publication';
+export type PreparedPublicationContent = ContentPreparationInput & { revision: number; videoId: string };
 
 export abstract class PublicationRepository {
-  abstract save (input: SavePublicationInput): Promise<Publication>;
+  abstract createFromPreparedContent (input: PreparedPublicationContent): Promise<void>;
 
   abstract findById (id: string): Promise<Publication | null>;
 
-  abstract findEligibleIds (phase: PublicationPhase): Promise<{ id: string }[]>;
+  abstract findEligibleIds (): Promise<{ id: string }[]>;
 
-  abstract reserveForProcessing (id: string, phase: PublicationPhase): Promise<PublicationWork | null>;
+  abstract reserveForProcessing (id: string): Promise<PublicationWork | null>;
 
   abstract releaseProcessing (job: PublicationWork, containerId?: string): Promise<void>;
 

@@ -33,7 +33,7 @@ export class ReplicateH3LiteProvider implements VideoProvider {
           prompt: script, 
           reference_image_urls: imageUrls,
           ratio: '9:16',
-          duration: 5,
+          duration: 12,
           resolution: '768P'
         },
         webhook: webhook.toString(),

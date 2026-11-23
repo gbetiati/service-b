@@ -8,13 +8,16 @@ const { Test } = require('@nestjs/testing');
 const sharp = require('sharp');
 const { Webhook } = require('standardwebhooks');
 
-test('company onboarding through reviewed and scheduled video publication', { timeout: 70_000 }, async () => {
+test('company onboarding through content preparation and deferred publication creation', { timeout: 70_000 }, async () => {
   assert.ok(process.env.TEST_DATABASE_URL, 'Configure TEST_DATABASE_URL with a dedicated test instance.');
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   process.env.OPENAI_API_KEY = 'test-key';
   process.env.OPENAI_MODEL = 'test-model';
   process.env.OPENAI_WEBHOOK_SECRET = 'whsec_' + Buffer.from(randomUUID()).toString('base64');
   process.env.CREATOMATE_WEBHOOK_SECRET = randomUUID();
+  process.env.REPLICATE_WEBHOOK_SECRET = 'whsec_' + Buffer.from(randomUUID()).toString('base64');
+  process.env.VIDEO_PROVIDER = 'creatomate';
+  process.env.VIDEO_REVIEW_ENABLED = 'true';
   process.env.JWT_SECRET = randomUUID() + randomUUID();
   process.env.SOCIAL_CREDENTIAL_KEY = Buffer.alloc(32, 42).toString('base64');
   process.env.INSTAGRAM_APP_ID = 'test-app';
@@ -30,6 +33,10 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   const { VideoProvider } = require('../dist/modules/video-generation/domain/providers/video.provider');
   const { VideoReviewProvider } = require('../dist/modules/video-generation/domain/providers/video-review.provider');
 
+  const { VideoTranscriptionProvider } = require('../dist/modules/video-generation/domain/providers/video-transcription.provider');
+  const { VideoSubtitlesProvider } = require('../dist/modules/video-generation/domain/providers/video-subtitles.provider');
+  const srt = '1\n00:00:00,200 --> 00:00:02,500\nTexto do vídeo.\n';
+  const transcriptionRequests = [];
   const objects = new Map();
   let publishes = 0;
   let renders = 0;
@@ -90,6 +97,19 @@ test('company onboarding through reviewed and scheduled video publication', { ti
         assert.equal(render.brief.brand, 'Marca A');
         assert.equal(references.length, 1);
         return { status: 'APPROVED', reason: 'Produtos conferem.', ocr: [] };
+      },
+    })
+    .overrideProvider(VideoTranscriptionProvider).useValue({
+      transcribe: async (submissionId, videoUrl) => {
+        assert.match(videoUrl, /^https:\/\/storage\.invalid\/.*\.mp4$/);
+        transcriptionRequests.push(submissionId);
+      },
+    })
+    .overrideProvider(VideoSubtitlesProvider).useValue({
+      burn: async (videoKey, subtitles) => {
+        assert.equal(subtitles, srt);
+        assert.ok(objects.has(videoKey));
+        return videoKey.replace(/\.mp4$/, '.captioned.mp4');
       },
     })
     .overrideProvider(ExternalApiProvider).useValue({
@@ -185,13 +205,16 @@ test('company onboarding through reviewed and scheduled video publication', { ti
 
     const get = async (route, token, status = 200) => (await request(route, { token, status })).data;
 
-    function deliverScriptWebhook (body, valid = true) {
+    const deliverScriptWebhook = (body, valid = true) =>
+      deliverSignedWebhook('/webhooks/openai', process.env.OPENAI_WEBHOOK_SECRET, body, valid);
+
+    function deliverSignedWebhook (route, secret, body, valid = true) {
       const webhookId = 'msg_' + randomUUID();
       const timestamp = new Date();
-      const webhook = new Webhook(process.env.OPENAI_WEBHOOK_SECRET);
+      const webhook = new Webhook(secret);
       const signature = webhook.sign(webhookId, timestamp, JSON.stringify(body));
 
-      return request('/webhooks/openai', {
+      return request(route, {
         method: 'POST', body, status: valid ? 204 : 401,
         headers: {
           'webhook-id': webhookId,
@@ -254,7 +277,9 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     assert.equal(content.aiScript, 'Roteiro criado pela IA.');
     await get('/contents/' + content.id, other, 404);
 
-    const patch = body => request('/contents/' + content.id, { method: 'PATCH', token, ...body });
+    const patch = ({ body, ...options }) => request('/contents/' + content.id, {
+      method: 'PATCH', token, body: { campaingId: campaign.id, ...body }, ...options,
+    });
 
     const changed = await patch({ body: { revision: 1, aiScript: 'Roteiro revisado.' } });
     assert.equal(changed.data.revision, 2);
@@ -279,14 +304,23 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     assert.equal(account.encryptedValue, undefined);
 
     await db.content.update({ where: { id: content.id }, data: { aiScript: '', scriptStatus: 'NOT_STARTED' } });
-    const scheduledAt = new Date(Date.now() + 5 * 60_000 + 2000);
-    const publication = await post('/publications', token, {
+    const preparePath = '/publications/contents/' + content.id + '/prepare';
+    await post(preparePath, other, undefined, 404);
+    const processing = await post(preparePath, token, undefined, 202);
+    assert.deepEqual(processing, { contentId: content.id, revision: 2, status: 'PENDING' });
+    assert.equal(await db.contentScheduled.count({ where: { contentId: content.id } }), 0);
+    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 0);
+
+    const scheduledAt = new Date(Date.now() + 10 * 60_000);
+    const schedule = await post('/publications', token, {
       contentId: content.id, socialAccountId: account.id, date: scheduledAt.toISOString(),
     });
-    assert.equal(publication.status, 'SCHEDULED');
-    assert.equal(publication.schedule.videoId, null);
-    assert.equal(new Date(publication.schedule.date).getTime(), scheduledAt.getTime());
-    await get('/publications/' + publication.id, other, 404);
+    const schedulePath = '/publications/schedules/' + schedule.id;
+    assert.equal(schedule.status, 'WAITING');
+    assert.equal(schedule.publication, null);
+    assert.equal(schedule.videoId, null);
+    assert.equal(new Date(schedule.date).getTime(), scheduledAt.getTime());
+    await get(schedulePath, other, 404);
     await patch({ body: { revision: 2, aiScript: 'Mudança durante agendamento' }, status: 409 });
 
     const awaitingScript = await poll(
@@ -349,16 +383,27 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     assert.equal(prepared.scriptStatus, 'READY');
     assert.equal(prepared.videoStatus, 'READY');
 
-    assert.equal((await get('/publications/' + publication.id, token)).containerId, null);
+    const submission = await poll(() => transcriptionRequests[0], Boolean);
+    assert.equal((await get(schedulePath, token)).publication, null);
+    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 0);
+    const transcriptionWebhook = '/webhooks/replicate/transcription?submissionId=' + submission;
+    await deliverSignedWebhook(transcriptionWebhook, process.env.REPLICATE_WEBHOOK_SECRET, {
+      id: 'whisper-test', status: 'succeeded', output: { transcription: srt },
+    });
+
+    const ready = await poll(() => get(schedulePath, token), value => !!value.publication);
+    assert.equal(ready.videoId, render.video.id);
+    assert.equal(ready.publication.status, 'SCHEDULED');
+    assert.equal(ready.status, 'READY');
+    const publication = await get('/publications/' + ready.publication.id, token);
+    assert.equal(publication.caption, 'Legenda de catálogo');
+    assert.equal(publication.schedule.id, schedule.id);
+    assert.equal((await get('/contents/' + content.id, token)).subtitleStatus, 'READY');
+    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 1);
+    await post(preparePath, token, undefined, 202);
+    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 1);
     assert.equal(publishes, 0);
-    // Advance the schedule without making the integration test wait five minutes.
-    await db.contentScheduled.update({ where: { id: publication.schedule.id }, data: { date: new Date() } });
-    const ready = await poll(() => get('/publications/' + publication.id, token), value => !!value.containerId);
-    assert.equal(ready.schedule.videoId, render.video.id);
-    const published = await poll(() => get('/publications/' + publication.id, token), value => value.status === 'PUBLISHED');
-    assert.equal(published.externalId, 'test-reel');
-    assert.equal(published.schedule.status, 'APPROVED');
-    assert.equal(publishes, 1);
+    await db.publication.update({ where: { id: publication.id }, data: { status: 'PUBLISHED' } });
     await patch({ body: { revision: 2, aiScript: 'Nova revisão depois de publicar' } });
     await post('/publications', token, {
       contentId: content.id, videoId: render.video.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
@@ -376,9 +421,10 @@ test('company onboarding through reviewed and scheduled video publication', { ti
       contentId: content.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
     });
     const failedPublication = await poll(
-      () => get('/publications/' + pendingPublication.id, token), value => value.status === 'FAILED',
+      () => get('/publications/schedules/' + pendingPublication.id, token), value => value.status === 'ERROR',
     );
-    assert.equal(failedPublication.error, 'Não foi possível solicitar o render.');
+    assert.match(failedPublication.preparationError, /render|vídeo/i);
+    assert.equal(failedPublication.publication, null);
     const videoFailure = await get('/contents/' + content.id, token);
     assert.equal(videoFailure.scriptStatus, 'READY');
     assert.equal(videoFailure.videoStatus, 'FAILED');
@@ -400,14 +446,15 @@ test('company onboarding through reviewed and scheduled video publication', { ti
     failedResponse.status = 'failed';
     await deliverScriptWebhook({ type: 'response.failed', data: { id: failedResponse.id } });
     const rejected = await poll(
-      () => get('/publications/' + scriptFailurePublication.id, token), value => value.status === 'FAILED',
+      () => get('/publications/schedules/' + scriptFailurePublication.id, token), value => value.status === 'ERROR',
     );
-    assert.match(rejected.error, /roteiro/);
+    assert.match(rejected.preparationError, /roteiro/);
+    assert.equal(rejected.publication, null);
     const scriptFailure = await get('/contents/' + content.id, token);
     assert.equal(scriptFailure.scriptStatus, 'FAILED');
     assert.equal(scriptFailure.videoStatus, 'NOT_STARTED');
     assert.equal(renders, 2);
-    assert.equal(publishes, 1);
+    assert.equal(publishes, 0);
   } finally {
     if (companies.length) {
       await db.company.deleteMany({ where: { id: { in: companies } } }).finally(() => app.close());
@@ -417,7 +464,7 @@ test('company onboarding through reviewed and scheduled video publication', { ti
   }
 });
 
-test('publication repository separates phases and claims one worker at a time', async () => {
+test('publication repository waits for preparation and claims one worker at a time', async () => {
   const { PrismaService }= require('../dist/prisma/prisma.service');
   const { RequestContext } = require('../dist/shared/core/request-context/request-context');
   const { PrismaPublicationRepository } = require('../dist/modules/publication/infra/prisma/publication.prisma-repository');
@@ -425,6 +472,11 @@ test('publication repository separates phases and claims one worker at a time', 
   assert.ok(process.env.TEST_DATABASE_URL, 'Configure TEST_DATABASE_URL with a dedicated test instance.');
   const db = new PrismaService({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const repository = new PrismaPublicationRepository(db, new RequestContext());
+  const { PrismaContentScheduleRepository } = require('../dist/modules/publication/infra/prisma/prisma-content-schedule-repository');
+  const { PrismaContentPreparationRepository } = require('../dist/modules/content/infra/prisma/prisma-content-preparation-repository');
+  const schedules = new PrismaContentScheduleRepository(db, new RequestContext());
+  const preparation = new PrismaContentPreparationRepository(db);
+  const eligibleSchedules = async () => (await schedules.findEligibleContents()).map(({ companyId, contentId }) => ({ companyId, contentId }));
   let companyId;
 
   try {
@@ -443,42 +495,27 @@ test('publication repository separates phases and claims one worker at a time', 
     });
 
     const start = Date.now();
-    const publication = await repository.save({
+    const schedule = await schedules.save({
       companyId, contentId: content.id, socialAccountId: account.id,
       date: new Date(start + 60_000),
     });
-    const claims = await Promise.all([repository.reserveForProcessing(publication.id, 'preparation'), repository.reserveForProcessing(publication.id, 'preparation')]);
-    assert.equal(claims.filter(Boolean).length, 1);
-    const originalClaim = claims.find(Boolean);
-    assert.ok(originalClaim.leaseUntil.getTime() >= start + CLAIM_LEASE_MS);
-    assert.equal(await repository.reserveForProcessing(publication.id, 'preparation'), null);
-
-    await db.publication.update({ where: { id: publication.id }, data: { leaseUntil: new Date(start - 1) } });
-    await delay(2);
-    const reclaim = await repository.reserveForProcessing(publication.id, 'preparation');
-    assert.ok(reclaim);
-    await repository.releaseProcessing(originalClaim, 'stale-worker');
-    const stillOwned = await db.publication.findUniqueOrThrow({ where: { id: publication.id } });
-    assert.equal(stillOwned.containerId, null);
-    assert.deepEqual(stillOwned.leaseUntil, reclaim.leaseUntil);
-
+    const input = { companyId, contentId: content.id, revision: content.revision };
+    const work = { companyId, contentId: content.id };
+    assert.equal(schedule.publication, null);
+    assert.deepEqual(await eligibleSchedules(), [work]);
+    assert.deepEqual(await preparation.findEligibleContents(4), []);
+    await preparation.request(work);
+    assert.deepEqual((await preparation.findEligibleContents(4)).map(({ contentId }) => contentId), [content.id]);
+    assert.deepEqual(await repository.findEligibleIds(), []);
     await db.content.update({ where: { id: content.id }, data: { scriptStatus: 'PENDING' } });
-    await repository.releaseProcessing(reclaim);
-    assert.deepEqual(await repository.findEligibleIds('preparation'), []);
-    assert.deepEqual(await repository.findEligibleIds('publication'), []);
-
-    await db.content.update({ where: { id: content.id }, data: { scriptStatus: 'READY' } });
-    assert.deepEqual(await repository.findEligibleIds('preparation'), [{ id: publication.id }]);
-    assert.deepEqual(await repository.findEligibleIds('publication'), []);
-
-    await db.content.update({ where: { id: content.id }, data: { videoStatus: 'READY' } });
-    assert.deepEqual(await repository.findEligibleIds('preparation'), [{ id: publication.id }]);
-    await db.contentScheduled.update({ where: { id: publication.schedule.id }, data: { date: new Date(start - 1) } });
+    assert.deepEqual(await eligibleSchedules(), []);
+    await db.content.update({ where: { id: content.id }, data: { scriptStatus: 'READY', videoStatus: 'READY', status: 'READY' } });
+    assert.deepEqual(await eligibleSchedules(), [work]);
+    await db.contentScheduled.update({ where: { id: schedule.id }, data: { date: new Date(start - 1) } });
     const { PrismaVideoTranscriptionRepository } = require(
       '../dist/modules/video-generation/infra/prisma/video-transcription.prisma-repository'
     );
     const transcriptionRepository = new PrismaVideoTranscriptionRepository(db);
-    const input = { companyId, contentId: content.id, revision: content.revision };
     const render = await db.videoGeneration.create({
       data: { ...input, input: {}, status: 'READY' },
     });
@@ -520,8 +557,8 @@ test('publication repository separates phases and claims one worker at a time', 
     assert.equal(requests.length, 1);
     const [webhook] = requests;
     assert.equal(webhook.pathname, '/webhooks/replicate/transcription');
-    assert.deepEqual(await repository.findEligibleIds('preparation'), []);
-    assert.deepEqual(await repository.findEligibleIds('publication'), []);
+    assert.deepEqual(await eligibleSchedules(), []);
+    assert.deepEqual(await repository.findEligibleIds(), []);
     const controller = new ReplicateWebhookController(null, null, transcribe);
     const submissionId = webhook.searchParams.get('submissionId');
     const send = (body, valid = true) => {
@@ -546,7 +583,7 @@ test('publication repository separates phases and claims one worker at a time', 
     assert.equal(transcribed.transcription, 'Texto do vídeo.');
     assert.equal(transcribed.transcriptionStatus, 'READY');
     assert.equal(transcribed.subtitleSrt, srt);
-    assert.deepEqual(await repository.findEligibleIds('publication'), []);
+    assert.deepEqual(await repository.findEligibleIds(), []);
 
     const { PrismaVideoSubtitlesRepository } = require('../dist/modules/video-generation/infra/prisma/video-subtitles.prisma-repository');
     const { BurnVideoSubtitlesUseCase } = require('../dist/modules/video-generation/application/use-cases/burn-video-subtitles.usecase');
@@ -565,9 +602,28 @@ test('publication repository separates phases and claims one worker at a time', 
     assert.equal(burns, 1);
     const captioned = await db.videoAsset.findFirstOrThrow({ where: { generationId: render.id } });
     assert.equal(captioned.captionedStorageKey, captionedStorageKey);
-    assert.deepEqual(await repository.findEligibleIds('publication'), [{ id: publication.id }]);
-    assert.equal(await repository.reserveForProcessing(publication.id, 'preparation'), null);
-    assert.ok(await repository.reserveForProcessing(publication.id, 'publication'));
+    assert.deepEqual(await eligibleSchedules(), [work]);
+    const prepared = { ...work, revision: content.revision, videoId: captioned.id };
+    await preparation.complete(work, content.revision);
+    assert.deepEqual(await preparation.findEligibleContents(4), []);
+    assert.equal(await db.publication.count({ where: { companyId } }), 0);
+    await Promise.all([repository.createFromPreparedContent(prepared), repository.createFromPreparedContent(prepared)]);
+    const [{ id: publicationId }] = await repository.findEligibleIds();
+    assert.equal(await db.publication.count({ where: { companyId, scheduleId: schedule.id } }), 1);
+    assert.deepEqual(await eligibleSchedules(), []);
+
+    const claims = await Promise.all([repository.reserveForProcessing(publicationId), repository.reserveForProcessing(publicationId)]);
+    assert.equal(claims.filter(Boolean).length, 1);
+    const originalClaim = claims.find(Boolean);
+    assert.ok(originalClaim.leaseUntil.getTime() >= start + CLAIM_LEASE_MS);
+    assert.equal(await repository.reserveForProcessing(publicationId), null);
+    await db.publication.update({ where: { id: publicationId }, data: { leaseUntil: new Date(start - 1) } });
+    const reclaim = await repository.reserveForProcessing(publicationId);
+    assert.ok(reclaim);
+    await repository.releaseProcessing(originalClaim, 'stale-worker');
+    const stillOwned = await db.publication.findUniqueOrThrow({ where: { id: publicationId } });
+    assert.equal(stillOwned.containerId, null);
+    assert.deepEqual(stillOwned.leaseUntil, reclaim.leaseUntil);
   } finally {
     try {
       if (companyId) await db.company.delete({ where: { id: companyId } });

@@ -8,7 +8,7 @@ import { VideoGeneration } from '../../domain/entities/video-generation.entity';
 import { VIDEO_RENDER_PROVIDER, VideoProvider } from '../../domain/providers/video.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
-type GenerationCommand = { companyId: string; contentId: string };
+type GenerationCommand = { companyId: string; contentId: string; revision?: number };
 
 @Injectable()
 export class GenerateVideoUseCase {
@@ -27,16 +27,19 @@ export class GenerateVideoUseCase {
     return this.generate(contentId, 'manual');
   }
 
-  requestScript ({ companyId, contentId }: GenerationCommand) {
-    return this.requestContext.runForCompany(companyId, () => this.generate(contentId, 'script'));
+  requestScript ({ companyId, contentId, revision }: GenerationCommand) {
+    return this.requestContext.runForCompany(companyId, () => this.generate(contentId, 'script', revision));
   }
 
-  requestVideo ({ companyId, contentId }: GenerationCommand) {
-    return this.requestContext.runForCompany(companyId, () => this.generate(contentId, 'video'));
+  requestVideo ({ companyId, contentId, revision }: GenerationCommand) {
+    return this.requestContext.runForCompany(companyId, () => this.generate(contentId, 'video', revision));
   }
 
-  private async generate (contentId: string, mode: 'manual' | 'script' | 'video') {
+  private async generate (contentId: string, mode: 'manual' | 'script' | 'video', revision?: number) {
     const content = requireRecord(await this.contentRepository.findById(contentId), 'Conteúdo');
+    if (revision !== undefined && revision !== content.revision) {
+      throw new AppError('conflict', 'A revisão do conteúdo mudou durante a preparação.');
+    }
 
     if (mode === 'video' && (content.scriptStatus !== 'READY' || !content.fields.aiScript.trim())) {
       throw new AppError('conflict', 'O roteiro ainda não está pronto para solicitar o vídeo.');
@@ -54,7 +57,7 @@ export class GenerateVideoUseCase {
     }
 
     const { assets, aiScript } = content.fields;
-
+    console.log('content.fields', content.fields)
     if (!assets.length) throw new AppError('invalid', 'Associe ao menos uma foto real do produto ao conteúdo.');
 
     const references = await this.contentRepository.findReferences(content);

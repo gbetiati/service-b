@@ -36,7 +36,9 @@ As rotas abaixo usam `Authorization: Bearer <accessToken>`. As rotas de cadastro
 | `GET /social-accounts/instagram/callback` | Processa o retorno da Meta |
 | `GET /social-accounts` | Lista as contas conectadas |
 | `POST /social-accounts/:id/instagram/refresh` | Renova a credencial do Instagram antes do vencimento |
-| `POST /publications` | Agenda um Reel com `contentId`, `socialAccountId`, `date` ISO 8601 com fuso e `caption` opcional. Aceita `videoId` para usar um vídeo já aprovado da revisão atual |
+| `POST /publications` | Cria um agendamento com `contentId`, `socialAccountId`, `date` ISO 8601 com fuso e `caption` opcional. Aceita `videoId` para usar um vídeo já aprovado da revisão atual |
+| `POST /publications/contents/:contentId/prepare` | Inicia a preparação pelo conteúdo. Retorna HTTP 202 com `contentId`, `revision` e `status`. Envie `{"regenerateFromRevision":7}` para criar uma revisão a partir da revisão atual 7 e renderizar um novo vídeo com o roteiro existente |
+| `GET /publications/schedules/:id` | Consulta o agendamento, a falha de preparação, quando houver, e o ID da publicação depois que for criada |
 | `POST /webhooks/openai` | Recebe o evento assinado de conclusão ou falha do roteiro |
 | `POST /webhooks/creatomate` | Recebe a conclusão do render usando o segredo do webhook |
 | `POST /webhooks/replicate` | Recebe a conclusão assinada do MiniMax H3 Lite |
@@ -58,7 +60,9 @@ Use `SERVICE_BASE_URL` para a URL pública apontada para a API em desenvolviment
 
 ## Publicação agendada
 
-Dois crons consultam o PostgreSQL a cada cinco segundos. A preparação fica elegível cinco minutos antes do horário. Ela pede o roteiro à OpenAI se ainda não houver roteiro pronto e, quando o roteiro fica `READY`, pede o vídeo ao provedor de render configurado. Quando o vídeo fica `READY`, pede a transcrição ao Whisper. Os webhooks gravam cada resultado, e o FFmpeg grava as legendas do SRT em um MP4 separado. O MP4 legendado libera o agendamento para a fase de publicação e fica disponível em `video.captionedUrl` na consulta do render. Instale uma compilação do FFmpeg com os filtros `subtitles` (libass) e o encoder `libx264`. Se o Whisper retornar um SRT vazio, o agendamento usa o vídeo original. O cron ignora as etapas em andamento até a conclusão ou a expiração do prazo.
+O endpoint de preparação inicia o fluxo pelo conteúdo, inclusive sem agendamento. O cron continua a execução a cada cinco segundos, conforme os webhooks atualizam as etapas. Um agendamento também ativa automaticamente a preparação cinco minutos antes do horário. O fluxo solicita roteiro, render, transcrição ao Whisper e renderização das legendas pelo FFmpeg. Consulte os status das etapas em `GET /contents/:id` e o MP4 legendado em `video.captionedUrl` na consulta do render.
+
+`POST /publications` retorna o agendamento com `publication: null` enquanto a preparação estiver em andamento. O orquestrador prepara o conteúdo e informa o resultado. Quando todas as etapas estiverem prontas e o vídeo da revisão atual estiver aprovado, o cron cria a publicação dos agendamentos válidos. Se a preparação falhar ou expirar, consulte `preparationError` no agendamento. Instale uma compilação do FFmpeg com o filtro `subtitles` (libass) e o encoder `libx264`. Use `FFMPEG_BINARY` para indicar o executável usado na etapa de legendas. Se o Whisper retornar um SRT vazio, o fluxo usa o vídeo original.
 
 O cron de publicação busca conteúdo com `scriptStatus` e `videoStatus` em `READY`, a partir do horário agendado, e verifica se o vídeo da revisão atual foi aprovado. Ele cria o container do Instagram e volta a consultar nos próximos ciclos enquanto o processamento estiver pendente. A reserva atômica no banco evita que duas instâncias executem a mesma publicação. Erros definitivos ou a expiração da janela de 30 minutos encerram a publicação como `FAILED`.
 
