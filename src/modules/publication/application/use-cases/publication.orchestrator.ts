@@ -19,7 +19,7 @@ export class PublicationOrchestrator {
 
   async execute (id: string, phase: PublicationPhase) {
     const job = await this.publicationRepository.reserveForProcessing(id, phase);
-
+    console.log('JOBB', job)
     if (!job) return;
 
     const { credential, schedule } = job;
@@ -31,15 +31,20 @@ export class PublicationOrchestrator {
     const { video, approved, scriptStatus, videoStatus } = await this.publicationExecutionReader.readPreparationState(job);
 
     if (phase === 'publication') {
-      if (scriptStatus !== 'READY' || videoStatus !== 'READY') return this.publicationRepository.releaseProcessing(job);
+      // if (scriptStatus !== 'READY' || videoStatus !== 'READY') return this.publicationRepository.releaseProcessing(job);
 
-      if (!video || !approved) {
-        return this.publicationRepository.markFailed(job, 'Use um vídeo aprovado da revisão atual do conteúdo.');
+      // if (!video || !approved) {
+      //   return this.publicationRepository.markFailed(job, 'Use um vídeo aprovado da revisão atual do conteúdo.');
+      // }
+      if(!video) {
+        console.log('SEM VIDEO')
+        return
       }
-
       if (!schedule.videoId) await this.publicationRepository.attachApprovedVideo(job, video.id);
 
-      return this.publishScheduledContentUseCase.execute(job, video.storageKey, credential);
+
+      console.log('INDO PUBLICAR...', job, video.storageKey, credential)
+    //      return this.publishScheduledContentUseCase.execute(job, video.storageKey, credential);
     }
 
     if (!PublicationPolicy.isWithinGraceWindow(schedule.date, Date.now())) {

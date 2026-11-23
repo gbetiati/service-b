@@ -11,7 +11,7 @@ async function bootstrap () {
 
   if (process.env.CORS_ORIGIN) app.enableCors({ origin: process.env.CORS_ORIGIN.split(',').map(origin => origin.trim()), credentials: true });
 
-  await app.listen(Number(process.env.PORT || 3003));
+  await app.listen(Number(process.env.PORT || 3000));
 }
 
 void bootstrap();

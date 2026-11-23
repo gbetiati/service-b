@@ -25,9 +25,13 @@ export class PublicationScheduler {
   private async dispatch (phase: PublicationPhase) {
     const due = await this.publicationRepository.findEligibleIds(phase);
     const results = await Promise.allSettled(due.map(({ id }) => this.publicationOrchestrator.execute(id, phase)));
+    if (due.length > 0) {
+      console.log('DISPACHHH', due, results);
+    }
 
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
+        console.log('res', result)
         const error = result.reason instanceof Error ? result.reason.stack : undefined;
         this.logger.error(`Falha ao processar a publicação ${due[index].id}.`, error);
       }

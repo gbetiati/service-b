@@ -1,22 +1,24 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ScriptProvider } from '@/modules/content/domain/providers/script.provider';
 import { ContentRepository } from '@/modules/content/domain/repositories/content.repository';
 import { AppError, requireRecord } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
 import { VideoGeneration } from '../../domain/entities/video-generation.entity';
-import { VideoProvider } from '../../domain/providers/video.provider';
+import { VIDEO_RENDER_PROVIDER, VideoProvider } from '../../domain/providers/video.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
 type GenerationCommand = { companyId: string; contentId: string };
 
 @Injectable()
 export class GenerateVideoUseCase {
+  private readonly logger = new Logger(GenerateVideoUseCase.name);
+
   constructor(
     private readonly contentRepository: ContentRepository,
     private readonly videoGenerationRepository: VideoGenerationRepository,
     private readonly scriptProvider: ScriptProvider,
-    private readonly videoProvider: VideoProvider,
+    @Inject(VIDEO_RENDER_PROVIDER) private readonly videoProvider: VideoProvider,
     private readonly storageProvider: StorageProvider,
     private readonly requestContext: RequestContext,
   ) { }
@@ -46,7 +48,10 @@ export class GenerateVideoUseCase {
 
     if (existing && mode === 'video') return this.submit(existing);
 
-    if (existing && existing.status !== 'FAILED') return this.advance(existing);
+    if (existing && existing.status !== 'FAILED') {
+      this.logger.log(`Geração existente para a revisão ${content.revision}. generationId=${existing.id} status=${existing.status}`);
+      return this.advance(existing);
+    }
 
     const { assets, aiScript } = content.fields;
 
@@ -61,7 +66,7 @@ export class GenerateVideoUseCase {
     const needsScriptWebhook = mode === 'script';
 
     const script = needsScriptWebhook ? '' : (aiScript.trim() && aiScript) || await this.scriptProvider.generate(brief);
-
+      console.log('script', script)
     const generation = await this.videoGenerationRepository.create(
       contentId, content.revision, { script, imageKeys, brief }, mode === 'manual', needsScriptWebhook ? 'PENDING_SCRIPT' : 'PENDING',
     );
@@ -97,12 +102,15 @@ export class GenerateVideoUseCase {
     const job = await this.videoGenerationRepository.claimSubmission(generation);
 
     if (job) {
+      const context = `generationId=${job.id} submissionId=${job.submissionId}`;
+      this.logger.log(`Preparando envio do vídeo ao provedor de render. ${context}`);
       let providerId: string;
       try {
         const imageUrls = await Promise.all(job.input.imageKeys.map(key => this.storageProvider.url(key, 7200)));
         providerId = await this.videoProvider.render({ submissionId: job.submissionId, script: job.input.script, imageUrls });
       } catch {
         await this.videoGenerationRepository.fail(job, 'Falha ao solicitar o render. Confirme a configuração e o template.');
+        this.logger.warn(`Falha ao solicitar o render ao provedor. ${context}`);
         return this.readSubmissionResult(job);
       }
       await this.videoGenerationRepository.submitted(job, providerId);
