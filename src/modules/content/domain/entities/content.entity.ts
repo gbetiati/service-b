@@ -4,13 +4,12 @@ import { ContentAsset } from './content-asset.entity';
 import { ContentStatus } from './content-status';
 import type { ScriptBrief } from '../providers/script.provider';
 
+export const CONTENT_MAX_MEDIA_ASSETS = 5;
+export const CONTENT_MAX_SCRIPT_LENGTH = 12000;
+
 export type PreparationStatus = 'NOT_STARTED' | 'PENDING' | 'READY' | 'FAILED';
 
-export type Editorial = {
-  brief?: string;
-  caption?: string;
-  tags?: string[]
-};
+export type Editorial = { brief?: string; caption?: string; tags?: string[] };
 
 export type ContentFields = {
   campaingId: string;
@@ -22,30 +21,13 @@ export type ContentFields = {
   assets: ContentAsset[];
 };
 
+export type ContentFieldChanges = Partial<Omit<ContentFields, 'assets'>> & { mediaAssetIds?: string[] };
+
 export type ContentReferences = {
-  campaign: {
-    brandId: string;
-    objective: string | null;
-    brand: { name: string } | null
-  } | null;
-
-  rule: {
-    campaingId: string;
-    guidelines: string
-  } | null;
-
-  products: {
-    id: string;
-    brandId: string;
-    name: string;
-    description: string | null
-  }[];
-
-  images: {
-    id: string;
-    productId: string;
-    storageKey: string
-  }[];
+  campaign: { brandId: string; objective: string | null; brand: { name: string } | null } | null;
+  rule: { campaingId: string; guidelines: string } | null;
+  products: { id: string; brandId: string; name: string; description: string | null }[];
+  images: { id: string; productId: string; storageKey: string }[];
 };
 
 export class Content {
@@ -62,35 +44,38 @@ export class Content {
     readonly transcriptionStatus: PreparationStatus = 'NOT_STARTED',
     readonly transcription: string | null = null,
     readonly subtitleStatus: PreparationStatus = 'NOT_STARTED',
-  ) { }
+  ) {}
 
-  static create(companyId: string, fields: ContentFields) {
+  static create (companyId: string, fields: ContentFields) {
     const now = new Date();
-    return new Content(
-      randomUUID(),
-      companyId,
-      fields,
-      1,
-      ContentStatus.WAITING,
-      now,
-      now,
-      fields.aiScript.trim() ? 'READY' : 'NOT_STARTED', 'NOT_STARTED'
-    );
+    return new Content(randomUUID(), companyId, fields, 1, ContentStatus.WAITING, now, now, Content.scriptStatusFor(fields.aiScript), 'NOT_STARTED');
   }
 
-  revise(fields: ContentFields) {
-    return new Content(
-      this.id,
-      this.
-        companyId, fields, this.
-          revision + 1,
-      ContentStatus.WAITING,
-      this.createdAt, new Date()
-      , fields.aiScript.trim() ? 'READY' : 'NOT_STARTED', 'NOT_STARTED'
-    );
+  // Um roteiro informado dispensa a etapa de geração por IA.
+  static scriptStatusFor (aiScript: string): PreparationStatus {
+    return aiScript.trim() ? 'READY' : 'NOT_STARTED';
   }
 
-  get allProductIds() {
+  assertRevision (expected: number | undefined) {
+    if (expected !== this.revision) throw new AppError('conflict', 'A revisão informada está desatualizada.');
+  }
+
+  revise (fields: ContentFields) {
+    return new Content(this.id, this.companyId, fields, this.revision + 1, ContentStatus.WAITING, this.createdAt, new Date(), Content.scriptStatusFor(fields.aiScript), 'NOT_STARTED');
+  }
+
+  // Cria a próxima revisão mantendo os campos que não foram alterados.
+  reviseWith ({ mediaAssetIds, ...changes }: ContentFieldChanges) {
+    const { fields } = this;
+    return this.revise({
+      campaingId: changes.campaingId ?? fields.campaingId, campaingRulesId: changes.campaingRulesId ?? fields.campaingRulesId,
+      productId: changes.productId ?? fields.productId, productIds: changes.productIds ?? fields.productIds,
+      aiScript: changes.aiScript ?? fields.aiScript, editorial: changes.editorial ?? fields.editorial,
+      assets: mediaAssetIds ? ContentAsset.fromMediaAssetIds(mediaAssetIds) : fields.assets,
+    });
+  }
+
+  get allProductIds () {
     if (this.fields.productIds.includes(this.fields.productId)) {
       throw new AppError('invalid', 'Use productIds somente para produtos adicionais.');
     }
@@ -98,7 +83,7 @@ export class Content {
     return [this.fields.productId, ...this.fields.productIds];
   }
 
-  validateReferences({ campaign, rule, products, images }: ContentReferences) {
+  validateReferences ({ campaign, rule, products, images }: ContentReferences) {
     const productIds = this.allProductIds;
     const { brandId, brand, objective } = requireRecord(campaign, 'Campanha');
 
@@ -123,7 +108,7 @@ export class Content {
     return { brand: requireRecord(brand, 'Marca'), objective, rule, products: orderedProducts };
   }
 
-  buildScriptBrief(references: ContentReferences): ScriptBrief {
+  buildScriptBrief (references: ContentReferences): ScriptBrief {
     const { brand, objective, rule, products } = this.validateReferences(references);
     return {
       brand: brand.name,

@@ -28,6 +28,6 @@ export class PrismaProductRepository implements ProductRepository {
   }
 
   private toDomain (row: Row) {
-    return new Product(row.id, row.companyId, row.name, row.createdAt, row.updatedAt, row.brandId, row.description);
+    return new Product(row.id, row.companyId, row.name, row.createdAt, row.updatedAt, row.brandId, row.description, row.price?.toFixed(2) ?? null, row.oldPrice?.toFixed(2) ?? null);
   }
 }

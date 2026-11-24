@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AppError } from '@/shared/core/errors/app.error';
-import { SubtitleJob, VideoSubtitlesRepository } from '../../domain/repositories/video-subtitles.repository';
+import { SubtitleJob, SubtitleTarget, VideoSubtitlesRepository } from '../../domain/repositories/video-subtitles.repository';
 
 @Injectable()
 export class PrismaVideoSubtitlesRepository implements VideoSubtitlesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  claim ({ companyId, contentId, revision }: Parameters<VideoSubtitlesRepository['claim']>[0]) {
+  claim ({ companyId, contentId, revision }: SubtitleTarget) {
     const now = new Date();
     const leaseUntil = new Date(now.getTime() + 5 * 60_000);
     return this.prisma.$transaction(async tx => {

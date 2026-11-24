@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ContentPreparationPolicy } from '@/modules/content/domain/entities/content-preparation.policy';
 import { ContentPreparationRepository } from '@/modules/content/domain/repositories/content-preparation.repository';
 import { SocialPlatformProvider } from '@/modules/social-account/domain/providers/social-platform.provider';
 import { TokenCipherProvider } from '@/modules/social-account/domain/providers/token-cipher.provider';
@@ -8,6 +9,8 @@ import { PublicationPolicy } from '../../domain/entities/publication.policy';
 import { PublicationWork } from '../../domain/entities/publication.entity';
 import { PublicationRepository } from '../../domain/repositories/publication.repository';
 
+const VIDEO_URL_TTL_SECONDS = 3600;
+
 @Injectable()
 export class PublishScheduledContentUseCase {
   constructor(
@@ -16,9 +19,9 @@ export class PublishScheduledContentUseCase {
     private readonly tokenCipherProvider: TokenCipherProvider,
     private readonly storageProvider: StorageProvider,
     private readonly contentPreparationRepository: ContentPreparationRepository,
-  ) { }
+  ) {}
 
-  async processScheduled(id: string) {
+  async processScheduled (id: string) {
     const job = await this.publicationRepository.reserveForProcessing(id);
     if (!job) return;
 
@@ -36,8 +39,8 @@ export class PublishScheduledContentUseCase {
     }
 
     const state = await this.contentPreparationRepository.read({ companyId, contentId: schedule.contentId }, schedule.videoId);
-    
-    if ([state.scriptStatus, state.videoStatus, state.transcriptionStatus, state.subtitleStatus].includes('FAILED')) {
+
+    if (ContentPreparationPolicy.hasFailed(state)) {
       return this.publicationRepository.markFailed(job, 'Falha na preparação do conteúdo.');
     }
 
@@ -51,7 +54,7 @@ export class PublishScheduledContentUseCase {
     return this.publicationRepository.releaseProcessing(job);
   }
 
-  async execute(job: PublicationWork, videoKey: string, credential: EncryptedToken) {
+  async execute (job: PublicationWork, videoKey: string, credential: EncryptedToken) {
     const date = job.schedule.date;
 
     if (Date.now() < date.getTime()) return this.publicationRepository.releaseProcessing(job);
@@ -82,7 +85,7 @@ export class PublishScheduledContentUseCase {
         return this.publicationRepository.markFailed(job, 'O prazo de publicação expirou.');
       }
 
-      const url = await this.storageProvider.url(videoKey, 3600);
+      const url = await this.storageProvider.url(videoKey, VIDEO_URL_TTL_SECONDS);
       const container = await this.socialPlatformProvider.createVideo(job.accountExternalId, token, url, job.caption ?? '');
       return this.publicationRepository.releaseProcessing(job, container);
     } catch {

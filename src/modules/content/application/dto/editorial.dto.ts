@@ -1,9 +1,8 @@
-import { ArrayMaxSize, IsArray, IsString, MaxLength, ValidateIf } from 'class-validator';
-
-const provided = (_: unknown, value: unknown) => value !== undefined;
+import { ArrayMaxSize, IsArray, IsString, MaxLength } from 'class-validator';
+import { ValidateIfProvided } from '@/shared/core/validation/decorators';
 
 export class EditorialDto {
-  @ValidateIf(provided) @IsString() @MaxLength(4000) brief?: string;
-  @ValidateIf(provided) @IsString() @MaxLength(2200) caption?: string;
-  @ValidateIf(provided) @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(60, { each: true }) tags?: string[];
+  @ValidateIfProvided() @IsString() @MaxLength(4000) brief?: string;
+  @ValidateIfProvided() @IsString() @MaxLength(2200) caption?: string;
+  @ValidateIfProvided() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(60, { each: true }) tags?: string[];
 }

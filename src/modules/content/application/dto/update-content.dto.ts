@@ -1,22 +1,10 @@
-import { IsInt, IsUUID, Min, ValidateIf } from 'class-validator';
+import { IsInt, IsUUID, Min } from 'class-validator';
+import { ValidateIfProvided } from '@/shared/core/validation/decorators';
 import { ContentFieldsDto } from './content-fields.dto';
 
-const provided = (_: unknown, value: unknown) => value !== undefined;
-
 export class UpdateContentDto extends ContentFieldsDto {
-  @ValidateIf(provided)
-  @IsInt() 
-  @Min(1) 
-  revision!: number;
-  
-  @IsUUID()
-  campaingId?: string;
-  
-  @ValidateIf(provided)
-  @IsUUID()
-  campaingRulesId?: string;
-  
-  @ValidateIf(provided)
-  @IsUUID()
-  productId?: string;
+  @ValidateIfProvided() @IsInt() @Min(1) revision!: number;
+  @IsUUID() campaingId?: string;
+  @ValidateIfProvided() @IsUUID() campaingRulesId?: string;
+  @ValidateIfProvided() @IsUUID() productId?: string;
 }

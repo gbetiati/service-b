@@ -5,4 +5,8 @@ export class User {
     readonly email: string,
     readonly passwordHash: string,
   ) {}
+
+  static normalizeEmail (email: string) {
+    return email.toLowerCase();
+  }
 }

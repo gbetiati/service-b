@@ -8,8 +8,10 @@ export type SubtitleJob = {
   srt: string;
 };
 
+export type SubtitleTarget = Pick<SubtitleJob, 'companyId' | 'contentId' | 'revision'>;
+
 export abstract class VideoSubtitlesRepository {
-  abstract claim (input: Pick<SubtitleJob, 'companyId' | 'contentId' | 'revision'>): Promise<SubtitleJob | null>;
+  abstract claim (input: SubtitleTarget): Promise<SubtitleJob | null>;
 
   abstract finish (job: SubtitleJob, outputKey: string | null): Promise<void>;
 }

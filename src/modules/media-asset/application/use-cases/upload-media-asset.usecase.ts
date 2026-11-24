@@ -21,16 +21,22 @@ export class UploadMediaAssetUseCase {
 
   async execute (productId: string, file: Buffer, mimeType?: string) {
     requireRecord(await this.productRepository.findById(productId), 'Produto');
-    const video = mimeType?.startsWith('video/') || file.toString('ascii', 4, 8) === 'ftyp';
-    if (video) await this.videoFileInspector.validateMp4(file);
-    const body = video ? file : await this.imageProcessorProvider.normalize(file);
+    const video = MediaAsset.isVideoUpload(file, mimeType);
+    const body = video ? await this.validatedVideo(file) : await this.imageProcessorProvider.normalize(file);
     const asset = MediaAsset.create(this.requestContext.companyId, productId, body.length, video ? 'video/mp4' : 'image/jpeg');
     await this.storageProvider.put(asset.storageKey, body, asset.contentType);
+
     try {
       return await this.mediaAssetRepository.create(asset);
     } catch (error) {
+      // Evita arquivo órfão no storage quando o registro não pôde ser salvo.
       await this.storageProvider.remove(asset.storageKey).catch(() => undefined);
       throw error;
     }
+  }
+
+  private async validatedVideo (file: Buffer) {
+    await this.videoFileInspector.validateMp4(file);
+    return file;
   }
 }

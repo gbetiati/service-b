@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
+import { parseSrtTranscript } from '../../domain/entities/transcript';
 import { VideoTranscriptionProvider } from '../../domain/providers/video-transcription.provider';
-import { VideoTranscriptionRepository } from '../../domain/repositories/video-transcription.repository';
+import { TranscriptionTarget, VideoTranscriptionRepository } from '../../domain/repositories/video-transcription.repository';
+
+const VIDEO_URL_TTL_SECONDS = 3600;
 
 @Injectable()
 export class TranscribeVideoUseCase {
@@ -11,12 +14,12 @@ export class TranscribeVideoUseCase {
     private readonly storageProvider: StorageProvider,
   ) {}
 
-  async execute (input: Parameters<VideoTranscriptionRepository['claim']>[0]) {
+  async execute (input: TranscriptionTarget) {
     const job = await this.videoTranscriptionRepository.claim(input);
     if (!job) return { status: 'PENDING' } as const;
 
     try {
-      await this.videoTranscriptionProvider.transcribe(job.submissionId, await this.storageProvider.url(job.storageKey, 3600));
+      await this.videoTranscriptionProvider.transcribe(job.submissionId, await this.storageProvider.url(job.storageKey, VIDEO_URL_TTL_SECONDS));
     } catch (error) {
       await this.complete(job.submissionId, null);
       throw error;
@@ -25,18 +28,8 @@ export class TranscribeVideoUseCase {
     return { status: 'PENDING' } as const;
   }
 
+  // Chamado pelo webhook do provedor. `srt` nulo indica falha na transcrição.
   complete (submissionId: string, srt: string | null) {
-    if (srt === null) return this.videoTranscriptionRepository.finish(submissionId, null);
-
-    const normalized = srt.trim().replace(/\r\n/g, '\n');
-    const cues = normalized ? normalized.split(/\n[ \t]*\n/) : [];
-    const lines = cues.map(cue => cue.split('\n'));
-    const timing = /^\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}$/;
-    if (lines.some(([index, range, text]) => !/^\d+$/.test(index) || !timing.test(range) || !text)) {
-      return this.videoTranscriptionRepository.finish(submissionId, null);
-    }
-
-    const text = lines.map(cue => cue.slice(2).join(' ')).join(' ');
-    return this.videoTranscriptionRepository.finish(submissionId, { text, srt: normalized ? normalized + '\n' : '' });
+    return this.videoTranscriptionRepository.finish(submissionId, srt === null ? null : parseSrtTranscript(srt));
   }
 }

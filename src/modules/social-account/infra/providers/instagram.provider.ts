@@ -15,7 +15,7 @@ const scopes = ['instagram_business_basic', 'instagram_business_content_publish'
 export class InstagramProvider implements SocialPlatformProvider {
   constructor(
     private readonly externalApiProvider: ExternalApiProvider,
-  ) { }
+  ) {}
 
   authorizationUrl (state: string) {
     const url = new URL('https://www.instagram.com/oauth/authorize');
@@ -100,7 +100,7 @@ export class InstagramProvider implements SocialPlatformProvider {
         headers: this.headers(accessToken),
         body: new URLSearchParams(form)
       });
-    
+
     if (!result.id) throw new AppError('upstream', 'Instagram não retornou um identificador de mídia.');
 
     return result.id;

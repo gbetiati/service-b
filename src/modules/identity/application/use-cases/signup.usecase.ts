@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { User } from '../../domain/entities/user.entity';
 import { UserRepository } from '../../domain/repositories/user.repository';
 import { PasswordHasher } from '../../domain/providers/password-hasher';
 import { SessionTokenProvider } from '../../domain/providers/session-token.provider';
@@ -14,7 +15,8 @@ export class SignupUseCase {
 
   async execute (dto: SignupDto) {
     const passwordHash = await this.passwordHasher.hash(dto.password);
-    const user = await this.userRepository.createWithCompany(dto.companyName, dto.email.toLowerCase(), passwordHash);
+    const user = await this.userRepository.createWithCompany(dto.companyName, User.normalizeEmail(dto.email), passwordHash);
+
     return { userId: user.id, companyId: user.companyId, accessToken: await this.sessionTokenProvider.sign(user.id, user.companyId) };
   }
 }

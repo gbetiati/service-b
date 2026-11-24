@@ -1,5 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { OAuthState } from '../../domain/entities/oauth-state';
 import { SocialPlatformProvider } from '../../domain/providers/social-platform.provider';
 import { SocialAccountRepository } from '../../domain/repositories/social-account.repository';
 
@@ -11,10 +11,9 @@ export class StartInstagramConnectionUseCase {
   ) {}
 
   async execute () {
-    const state = randomBytes(32).toString('base64url');
-    const nonce = randomBytes(32).toString('base64url');
+    const { state, nonce, hash } = OAuthState.generate();
     const authorizationUrl = this.socialPlatformProvider.authorizationUrl(state);
-    await this.socialAccountRepository.saveState(createHash('sha256').update(state + '.' + nonce).digest('hex'), new Date(Date.now() + 600_000));
+    await this.socialAccountRepository.saveState(hash, OAuthState.expiresAt());
     return { authorizationUrl, nonce };
   }
 }

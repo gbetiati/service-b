@@ -29,7 +29,7 @@ export class S3StorageProvider implements StorageProvider {
     const result = await this.s3client.send(this.object(key));
 
     if (!result.Body) throw new AppError('upstream', 'Storage retornou um arquivo vazio.');
-    
+
     return result.Body as Readable;
   }
 

@@ -5,7 +5,7 @@ import { RequestContext } from '@/shared/core/request-context/request-context';
 import { ContentScheduled } from '../../domain/entities/content-scheduled.entity';
 import { CreateScheduledPublicationDto } from '../dto/create-scheduled-publication.dto';
 import { PublicationSchedulingTransaction } from '../ports/publication-scheduling-transaction';
-import { validatePublicationAccount, validatePublicationSchedule } from './validate-publication-schedule';
+import { validatePublicationAccount, validatePublicationSchedule } from '../services/validate-publication-schedule';
 
 @Injectable()
 export class CreateScheduledPublicationUseCase {

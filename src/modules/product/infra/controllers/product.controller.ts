@@ -1,13 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
-import { TenantGuard } from '@/modules/identity/infra/guards/tenant.guard';
-import { JwtAuthGuard } from '@/modules/identity/infra/jwt/jwt-auth.guard';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
 import { CreateProductDto } from '../../application/dto/create-product.dto';
 import { CreateProductUseCase } from '../../application/use-cases/create-product.usecase';
 import { GetProductUseCase } from '../../application/use-cases/get-product.usecase';
 import { ListProductUseCase } from '../../application/use-cases/list-product.usecase';
 
 @Controller('products')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Authenticated()
 export class ProductController {
   constructor(
     private readonly createProductUseCase: CreateProductUseCase,

@@ -1,13 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { GenerateVideoUseCase } from '@/modules/video-generation/application/use-cases/generate-video.usecase';
+import { UpdateContentUseCase } from '@/modules/content/application/use-cases/update-content.usecase';
+import { PreparationStatus } from '@/modules/content/domain/entities/content.entity';
+import { ContentPreparationInput, ContentPreparationRepository } from '@/modules/content/domain/repositories/content-preparation.repository';
 import { BurnVideoSubtitlesUseCase } from '@/modules/video-generation/application/use-cases/burn-video-subtitles.usecase';
+import { GenerateVideoUseCase } from '@/modules/video-generation/application/use-cases/generate-video.usecase';
 import { TranscribeVideoUseCase } from '@/modules/video-generation/application/use-cases/transcribe-video.usecase';
 import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
-import { ContentPreparationInput, ContentPreparationRepository } from '@/modules/content/domain/repositories/content-preparation.repository';
-import { UpdateContentUseCase } from '@/modules/content/application/use-cases/update-content.usecase';
 import { PublicationPolicy } from '../../domain/entities/publication.policy';
 
+type PreparationStep = { status: PreparationStatus; request: () => Promise<{ status: string }>; failureMessage: string };
+
+// Avança a preparação do conteúdo uma etapa por vez (roteiro, vídeo, transcrição e legendas).
+// Cada chamada inicia no máximo a próxima etapa pendente; os webhooks e o cron continuam o fluxo.
 @Injectable()
 export class PublicationOrchestrator {
   private readonly logger = new Logger(PublicationOrchestrator.name);
@@ -19,11 +24,10 @@ export class PublicationOrchestrator {
     private readonly burnVideoSubtitlesUseCase: BurnVideoSubtitlesUseCase,
     private readonly requestContext: RequestContext,
     private readonly updateContentUseCase: UpdateContentUseCase,
-  ) { }
+  ) {}
 
-  async start(contentId: string, regenerateFromRevision?: number) {
+  async start (contentId: string, regenerateFromRevision?: number) {
     this.logger.log(`Preparação solicitada para o conteúdo ${contentId}.`);
-
     const input = { companyId: this.requestContext.companyId, contentId };
 
     if (regenerateFromRevision !== undefined) {
@@ -35,53 +39,31 @@ export class PublicationOrchestrator {
     return this.execute(input);
   }
 
-  async execute(input: ContentPreparationInput, expectedRevision?: number) {
-    const {
-      revision,
-      scriptStatus,
-      videoStatus,
-      transcriptionStatus,
-      subtitleStatus,
-      status,
-      video
-    } = await this.contentPreparationRepository.read(input);
+  async execute (input: ContentPreparationInput, expectedRevision?: number) {
+    const state = await this.contentPreparationRepository.read(input);
+    const { revision, status, video } = state;
 
     if (expectedRevision !== undefined && expectedRevision !== revision) {
       throw new AppError('conflict', 'A revisão do conteúdo mudou durante a preparação.');
     }
 
-    this.logger.log(`Conteúdo ${input.contentId}, revisão ${revision}: roteiro=${scriptStatus}, vídeo=${videoStatus}, transcrição=${transcriptionStatus}, legendas=${subtitleStatus}.`,);
+    this.logger.log(`Conteúdo ${input.contentId}, revisão ${revision}: roteiro=${state.scriptStatus}, vídeo=${state.videoStatus}, transcrição=${state.transcriptionStatus}, legendas=${state.subtitleStatus}.`);
 
-    const steps = [
-      {
-        status: scriptStatus,
-        request: () => this.generateVideoUseCase.requestScript({ ...input, revision }),
-        failureMessage: 'Não foi possível gerar o roteiro.',
-      },
-      {
-        status: videoStatus,
-        request: () => this.generateVideoUseCase.requestVideo({ ...input, revision }),
-        failureMessage: 'Não foi possível renderizar o vídeo.',
-      },
-      {
-        status: transcriptionStatus,
-        request: () => this.transcribeVideoUseCase.execute({ ...input, revision }),
-        failureMessage: 'Não foi possível transcrever o vídeo.',
-      },
-      {
-        status: subtitleStatus,
-        request: () => this.burnVideoSubtitlesUseCase.execute({ ...input, revision }),
-        failureMessage: 'Não foi possível renderizar as legendas.',
-      },
+    const target = { ...input, revision };
+    const steps: PreparationStep[] = [
+      { status: state.scriptStatus, request: () => this.generateVideoUseCase.requestScript(target), failureMessage: 'Não foi possível gerar o roteiro.' },
+      { status: state.videoStatus, request: () => this.generateVideoUseCase.requestVideo(target), failureMessage: 'Não foi possível renderizar o vídeo.' },
+      { status: state.transcriptionStatus, request: () => this.transcribeVideoUseCase.execute(target), failureMessage: 'Não foi possível transcrever o vídeo.' },
+      { status: state.subtitleStatus, request: () => this.burnVideoSubtitlesUseCase.execute(target), failureMessage: 'Não foi possível renderizar as legendas.' },
     ];
 
     const fail = async (error: string) => {
       await this.contentPreparationRepository.complete(input, revision);
-
       return { contentId: input.contentId, revision, status: 'FAILED', error } as const;
     };
 
     const failed = steps.find(step => step.status === 'FAILED');
+
     if (failed) return fail(failed.failureMessage);
 
     const next = steps.find(step => step.status !== 'READY');
@@ -92,7 +74,6 @@ export class PublicationOrchestrator {
       }
 
       await this.contentPreparationRepository.complete(input, revision);
-      
       return { contentId: input.contentId, revision, status: 'READY', videoId: video.id } as const;
     }
 
@@ -105,7 +86,7 @@ export class PublicationOrchestrator {
         return fail(message);
       }
     }
-    
+
     return { contentId: input.contentId, revision, status: 'PENDING' } as const;
   }
 }

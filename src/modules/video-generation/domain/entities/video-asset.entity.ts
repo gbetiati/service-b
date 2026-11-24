@@ -12,4 +12,12 @@ export class VideoAsset {
     readonly storageKey: string,
     readonly review: VideoReview,
   ) {}
+
+  static storageKeyFor (companyId: string, contentId: string, generationId: string) {
+    return `${companyId}/contents/${contentId}/videos/${generationId}.mp4`;
+  }
+
+  static skippedReview (): VideoReview {
+    return { status: ContentStatus.APPROVED, reason: 'Revisão automática dispensada por configuração.', ocr: [] };
+  }
 }

@@ -17,7 +17,7 @@ export class CreateProductUseCase {
   async execute (dto: CreateProductDto) {
     requireRecord(await this.brandRepository.findById(dto.brandId), 'Marca');
 
-    const entity = Product.create(this.requestContext.companyId, dto.name, dto.brandId, dto.description ?? null);
+    const entity = Product.create(this.requestContext.companyId, dto.name, dto.brandId, dto.description ?? null, dto.price?.toFixed(2) ?? null, dto.oldPrice?.toFixed(2) ?? null);
     return this.productRepository.create(entity);
   }
 }

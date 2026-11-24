@@ -3,6 +3,7 @@ import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { Webhook } from 'standardwebhooks';
 import { requiredEnv } from '@/shared/core/config';
+import { standardWebhookHeaders } from '@/shared/libs/http/standard-webhook';
 import { CompleteVideoGenerationUseCase } from '../../application/use-cases/complete-video-generation.usecase';
 import { TranscribeVideoUseCase } from '../../application/use-cases/transcribe-video.usecase';
 import { ReplicateH3LiteProvider } from '../providers/replicate-h3-lite.provider';
@@ -21,7 +22,7 @@ export class ReplicateWebhookController {
 
   @Post()
   @HttpCode(204)
-  async receive(@Req() request: RawBodyRequest<Request>, @Query('submissionId') submissionId: unknown) {
+  async receive (@Req() request: RawBodyRequest<Request>, @Query('submissionId') submissionId: unknown) {
     const { id, status, output, submission } = this.verifiedPrediction(request, submissionId);
     const providerId = this.replicateProvider.providerId(id);
 
@@ -42,7 +43,6 @@ export class ReplicateWebhookController {
   @HttpCode(204)
   async receiveTranscription (@Req() request: RawBodyRequest<Request>, @Query('submissionId') submissionId: unknown) {
     const { status, output, submission } = this.verifiedPrediction(request, submissionId);
-    console.log('transcription WH', status, output, submission)
     if (status === 'failed' || status === 'canceled') {
       await this.transcribeVideoUseCase.complete(submission, null);
     } else if (status === 'succeeded') {
@@ -56,11 +56,7 @@ export class ReplicateWebhookController {
     let prediction: Prediction | null;
     try {
       if (!request.rawBody) throw new Error('Corpo original ausente.');
-      prediction = new Webhook(secret).verify(request.rawBody, {
-        'webhook-id': request.header('webhook-id') ?? '',
-        'webhook-timestamp': request.header('webhook-timestamp') ?? '',
-        'webhook-signature': request.header('webhook-signature') ?? '',
-      }) as Prediction | null;
+      prediction = new Webhook(secret).verify(request.rawBody, standardWebhookHeaders(request)) as Prediction | null;
     } catch {
       this.logger.warn('Webhook da Replicate rejeitado por assinatura inválida.');
       throw new UnauthorizedException('Assinatura inválida do webhook da Replicate.');

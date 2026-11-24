@@ -148,6 +148,8 @@ model Product {
   brand       Brand            @relation(fields: [companyId, brandId], references: [companyId, id], onDelete: Cascade)
   name        String
   description String?
+  price       Decimal?         @db.Decimal(12, 2)
+  oldPrice    Decimal?         @db.Decimal(12, 2)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   media       MediaAsset[]
@@ -385,3 +387,6 @@ model Publication {
   @@index([status, updatedAt])
   @@map("publications")
 }
+
+
+// Job do módulo product-video. companyId/productId sem @relation para não alterar os models existentes.

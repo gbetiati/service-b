@@ -1,0 +1,14 @@
+{
+  "copy": {
+    "headline": "Conforto para o dia todo",
+    "bullets": ["Tecido leve e respirável", "Costura reforçada", "Disponível em 4 cores"],
+    "cta": "Compre agora"
+  },
+  "product": {
+    "name": "Camiseta Básica",
+    "price": "R$ 79,90",
+    "oldPrice": "R$ 99,90",
+    "imageUrl": "https://picsum.photos/id/21/1200/1200"
+  },
+  "brand": { "primaryColor": "#2563eb" }
+}

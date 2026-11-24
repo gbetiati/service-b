@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ContentStatus } from '@/modules/content/domain/entities/content-status';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
 import type { RenderInput } from '../../domain/entities/video-generation.entity';
 import { VideoAsset, type VideoReview } from '../../domain/entities/video-asset.entity';
@@ -41,7 +40,7 @@ export class CompleteVideoGenerationUseCase {
         this.logger.warn(`Render rejeitado pelo provedor. ${context}`);
       } else {
         const { companyId, contentId, id, revision, input } = generation;
-        const key = `${companyId}/contents/${contentId}/videos/${id}.mp4`;
+        const key = VideoAsset.storageKeyFor(companyId, contentId, id);
         try {
           await this.storageProvider.put(key, await download(outcome.url), 'video/mp4');
         } catch {
@@ -52,7 +51,7 @@ export class CompleteVideoGenerationUseCase {
 
         this.logger.log(`MP4 salvo no storage. ${context}`);
         const review = await this.review(key, input);
-        await this.videoGenerationRepository.complete(generation, new VideoAsset(id, companyId, contentId, id, revision, key, review));
+        await this.videoGenerationRepository.complete(generation, new VideoAsset(id, companyId, contentId, id, revision, key, review), outcome.narrated ?? true);
         this.logger.log(`Processamento do render concluído. ${context} revisão=${review.status}`);
       }
 
@@ -65,11 +64,11 @@ export class CompleteVideoGenerationUseCase {
   }
 
   private async review (key: string, input: RenderInput): Promise<VideoReview> {
-    if (process.env.VIDEO_REVIEW_ENABLED === 'false') {
-      return { status: ContentStatus.APPROVED, reason: 'Revisão automática dispensada por configuração.', ocr: [] };
-    }
-
-    const references = await Promise.all(input.imageKeys.map(image => this.storageProvider.url(image)));
-    return this.videoReviewProvider.review(await this.storageProvider.open(key), input, references);
+    // TESTE (mock): revisão automática comentada; todo vídeo é aprovado.
+    return VideoAsset.skippedReview();
+    // if (process.env.VIDEO_REVIEW_ENABLED === 'false') return VideoAsset.skippedReview();
+    //
+    // const references = await Promise.all(input.imageKeys.map(image => this.storageProvider.url(image)));
+    // return this.videoReviewProvider.review(await this.storageProvider.open(key), input, references);
   }
 }

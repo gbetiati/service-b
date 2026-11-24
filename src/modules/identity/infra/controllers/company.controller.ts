@@ -1,10 +1,9 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { GetCompanyUseCase } from '../../application/use-cases/get-company.usecase';
-import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
-import { TenantGuard } from '../guards/tenant.guard';
+import { Authenticated } from '../guards/authenticated.decorator';
 
 @Controller('companies')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Authenticated()
 export class CompanyController {
   constructor(
     private readonly getCompanyUseCase: GetCompanyUseCase,

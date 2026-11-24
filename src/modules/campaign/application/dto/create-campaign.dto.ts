@@ -1,11 +1,9 @@
-import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, MaxLength, IsUUID, ValidateIf } from 'class-validator';
-
-const provided = (_: unknown, value: unknown) => value !== undefined;
+import { IsNotEmpty, IsString, MaxLength, IsUUID } from 'class-validator';
+import { ValidateIfProvided, Trim } from '@/shared/core/validation/decorators';
 
 export class CreateCampaignDto {
-  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @Trim()
   @IsString() @IsNotEmpty() @MaxLength(160) name!: string;
   @IsUUID() brandId!: string;
-  @ValidateIf(provided) @IsString() @MaxLength(4000) objective?: string;
+  @ValidateIfProvided() @IsString() @MaxLength(4000) objective?: string;
 }

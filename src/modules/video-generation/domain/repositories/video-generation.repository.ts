@@ -26,5 +26,5 @@ export abstract class VideoGenerationRepository {
 
   abstract fail (generation: VideoGeneration, message: string, stage?: 'script' | 'video'): Promise<void>;
 
-  abstract complete (generation: VideoGeneration, video: VideoAsset): Promise<void>;
+  abstract complete (generation: VideoGeneration, video: VideoAsset, narrated?: boolean): Promise<void>;
 }

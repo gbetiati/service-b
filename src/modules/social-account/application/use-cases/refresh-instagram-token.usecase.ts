@@ -15,14 +15,13 @@ export class RefreshInstagramTokenUseCase {
   async execute (id: string) {
     const current = requireRecord(await this.socialAccountRepository.credential(id), 'Credencial');
 
-    if (!current.expiresAt || current.expiresAt.getTime() <= Date.now()) {
-      throw new AppError('conflict', 'A credencial expirou. Conecte a conta novamente.');
-    }
+    if (current.isExpired()) throw new AppError('conflict', 'A credencial expirou. Conecte a conta novamente.');
 
-    if (Date.now() - current.updatedAt.getTime() < 86_400_000) throw new AppError('conflict', 'O token precisa ter pelo menos 24 horas.');
+    if (!current.isOldEnoughToRefresh()) throw new AppError('conflict', 'O token precisa ter pelo menos 24 horas.');
 
     const refreshed = await this.socialPlatformProvider.refresh(this.tokenCipherProvider.decrypt(current, current.companyId));
-    await this.socialAccountRepository.updateCredential(current, { ...this.tokenCipherProvider.encrypt(refreshed.accessToken, current.companyId), expiresAt: refreshed.expiresAt });
+    const encrypted = this.tokenCipherProvider.encrypt(refreshed.accessToken, current.companyId);
+    await this.socialAccountRepository.updateCredential(current, { ...encrypted, expiresAt: refreshed.expiresAt });
     return { expiresAt: refreshed.expiresAt };
   }
 }

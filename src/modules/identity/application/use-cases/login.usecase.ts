@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '@/shared/core/errors/app.error';
+import { User } from '../../domain/entities/user.entity';
 import { UserRepository } from '../../domain/repositories/user.repository';
 import { PasswordHasher } from '../../domain/providers/password-hasher';
 import { SessionTokenProvider } from '../../domain/providers/session-token.provider';
@@ -14,8 +15,9 @@ export class LoginUseCase {
   ) {}
 
   async execute (dto: LoginDto) {
-    const user = await this.userRepository.findByEmail(dto.email.toLowerCase());
+    const user = await this.userRepository.findByEmail(User.normalizeEmail(dto.email));
 
+    // A senha é verificada mesmo sem usuário para não revelar, pelo tempo de resposta, quais e-mails existem.
     if (!await this.passwordHasher.verify(dto.password, user?.passwordHash) || !user) {
       throw new AppError('unauthorized', 'E-mail ou senha inválidos.');
     }

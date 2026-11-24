@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
+import { OAuthState } from '../../domain/entities/oauth-state';
 import { SocialPlatformProvider } from '../../domain/providers/social-platform.provider';
 import { TokenCipherProvider } from '../../domain/providers/token-cipher.provider';
 import { SocialAccountRepository } from '../../domain/repositories/social-account.repository';
@@ -17,9 +17,9 @@ export class ConnectInstagramUseCase {
   ) {}
 
   async execute (dto: InstagramCallbackDto, nonce: string | undefined) {
-    if (!nonce || !/^[A-Za-z0-9_-]{43}$/.test(nonce)) throw new AppError('invalid', 'Abra a autorização no navegador que iniciou a conexão.');
+    if (!OAuthState.isValidToken(nonce)) throw new AppError('invalid', 'Abra a autorização no navegador que iniciou a conexão.');
 
-    const identity = await this.socialAccountRepository.consumeState(createHash('sha256').update(dto.state + '.' + nonce).digest('hex'));
+    const identity = await this.socialAccountRepository.consumeState(OAuthState.hash(dto.state, nonce));
 
     if (!identity) throw new AppError('invalid', 'A autorização expirou ou já foi utilizada.');
 

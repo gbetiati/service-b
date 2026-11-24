@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { PublicationSchedulingTransaction } from '../ports/publication-scheduling-transaction';
 import { SchedulePublicationDto } from '../dto/schedule-publication.dto';
-import { validatePublicationSchedule } from './validate-publication-schedule';
+import { validatePublicationSchedule } from '../services/validate-publication-schedule';
 
 @Injectable()
 export class SchedulePublicationUseCase {

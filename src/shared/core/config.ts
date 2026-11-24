@@ -24,3 +24,12 @@ export function servicePublicUrl (path: string): URL {
 
   return new URL(path, url);
 }
+
+// URL pública HTTPS para o provedor externo chamar o webhook. `provider` completa a mensagem, como "do Creatomate".
+export function httpsWebhookUrl (path: string, provider: string): URL {
+  const url = servicePublicUrl(path);
+
+  if (url.protocol !== 'https:') throw new AppError('unavailable', 'A URL pública do serviço precisa usar HTTPS para o webhook ' + provider + '.');
+
+  return url;
+}

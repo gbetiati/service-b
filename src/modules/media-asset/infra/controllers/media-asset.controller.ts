@@ -1,13 +1,12 @@
-import { Controller, Get, Param, ParseFilePipeBuilder, ParseUUIDPipe, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Param, ParseFilePipeBuilder, ParseUUIDPipe, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { TenantGuard } from '@/modules/identity/infra/guards/tenant.guard';
-import { JwtAuthGuard } from '@/modules/identity/infra/jwt/jwt-auth.guard';
+import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
 import { GetMediaAssetUrlUseCase } from '../../application/use-cases/get-media-asset-url.usecase';
 import { ListMediaAssetsUseCase } from '../../application/use-cases/list-media-assets.usecase';
 import { UploadMediaAssetUseCase } from '../../application/use-cases/upload-media-asset.usecase';
 
 @Controller()
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Authenticated()
 export class MediaAssetController {
   constructor(
     private readonly uploadMediaAssetUseCase: UploadMediaAssetUseCase,

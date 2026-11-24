@@ -1,8 +1,6 @@
-import { IsInt, Min, ValidateIf } from 'class-validator';
+import { IsInt, Min } from 'class-validator';
+import { ValidateIfProvided } from '@/shared/core/validation/decorators';
 
 export class PreparePublicationDto {
-  @ValidateIf((_, value) => value !== undefined)
-  @IsInt()
-  @Min(1)
-  regenerateFromRevision?: number;
+  @ValidateIfProvided() @IsInt() @Min(1) regenerateFromRevision?: number;
 }

@@ -1,12 +1,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ScriptProvider } from '@/modules/content/domain/providers/script.provider';
 import { ContentRepository } from '@/modules/content/domain/repositories/content.repository';
+import { ProductRepository } from '@/modules/product/domain/repositories/product.repository';
 import { AppError, requireRecord } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
-import { VideoGeneration } from '../../domain/entities/video-generation.entity';
+import { RenderProduct, VideoGeneration } from '../../domain/entities/video-generation.entity';
 import { VIDEO_RENDER_PROVIDER, VideoProvider } from '../../domain/providers/video.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
+
+// A URL das fotos precisa valer enquanto o render aguarda na fila e executa.
+const IMAGE_URL_TTL_SECONDS = 7200;
 
 type GenerationCommand = { companyId: string; contentId: string; revision?: number };
 
@@ -21,7 +25,8 @@ export class GenerateVideoUseCase {
     @Inject(VIDEO_RENDER_PROVIDER) private readonly videoProvider: VideoProvider,
     private readonly storageProvider: StorageProvider,
     private readonly requestContext: RequestContext,
-  ) { }
+    private readonly productRepository: ProductRepository,
+  ) {}
 
   execute (contentId: string) {
     return this.generate(contentId, 'manual');
@@ -57,7 +62,6 @@ export class GenerateVideoUseCase {
     }
 
     const { assets, aiScript } = content.fields;
-    console.log('content.fields', content.fields)
     if (!assets.length) throw new AppError('invalid', 'Associe ao menos uma foto real do produto ao conteúdo.');
 
     const references = await this.contentRepository.findReferences(content);
@@ -69,12 +73,18 @@ export class GenerateVideoUseCase {
     const needsScriptWebhook = mode === 'script';
 
     const script = needsScriptWebhook ? '' : (aiScript.trim() && aiScript) || await this.scriptProvider.generate(brief);
-      console.log('script', script)
+    const product = await this.renderProduct(content.fields.productId);
     const generation = await this.videoGenerationRepository.create(
-      contentId, content.revision, { script, imageKeys, brief }, mode === 'manual', needsScriptWebhook ? 'PENDING_SCRIPT' : 'PENDING',
+      contentId, content.revision, { script, imageKeys, brief, product }, mode === 'manual', needsScriptWebhook ? 'PENDING_SCRIPT' : 'PENDING',
     );
 
     return needsScriptWebhook ? this.submitScript(generation) : this.submit(generation);
+  }
+
+  // Dados do produto principal usados por provedores que montam o vídeo a partir do cadastro (Remotion).
+  private async renderProduct (productId: string): Promise<RenderProduct> {
+    const { name, description, price, oldPrice } = requireRecord(await this.productRepository.findById(productId), 'Produto');
+    return { name, description, price, oldPrice };
   }
 
   private advance (generation: VideoGeneration) {
@@ -109,8 +119,9 @@ export class GenerateVideoUseCase {
       this.logger.log(`Preparando envio do vídeo ao provedor de render. ${context}`);
       let providerId: string;
       try {
-        const imageUrls = await Promise.all(job.input.imageKeys.map(key => this.storageProvider.url(key, 7200)));
-        providerId = await this.videoProvider.render({ submissionId: job.submissionId, script: job.input.script, imageUrls });
+        const { script, imageKeys, brief, product } = job.input;
+        const imageUrls = await Promise.all(imageKeys.map(key => this.storageProvider.url(key, IMAGE_URL_TTL_SECONDS)));
+        providerId = await this.videoProvider.render({ submissionId: job.submissionId, script, imageUrls, brand: brief.brand, product });
       } catch {
         await this.videoGenerationRepository.fail(job, 'Falha ao solicitar o render. Confirme a configuração e o template.');
         this.logger.warn(`Falha ao solicitar o render ao provedor. ${context}`);

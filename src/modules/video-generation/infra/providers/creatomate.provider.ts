@@ -1,9 +1,9 @@
-import { Readable } from 'node:stream';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { Readable } from 'node:stream';
 import { Injectable, Logger } from '@nestjs/common';
-import { requiredEnv, servicePublicUrl } from '@/shared/core/config';
+import { httpsWebhookUrl, requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
 import { ExternalApiProvider } from '@/shared/libs/http/external-api.provider';
+import { downloadLimited, isPlainHttpsUrl } from '@/shared/libs/http/limited-download';
 import { VideoProvider } from '../../domain/providers/video.provider';
 
 const api = 'https://api.creatomate.com/v2/renders';
@@ -15,37 +15,22 @@ export class CreatomateProvider implements VideoProvider {
 
   constructor(
     private readonly externalApiProvider: ExternalApiProvider,
-  ) { }
+  ) {}
 
-  async render(input: { submissionId: string; script: string; imageUrls: string[] }) {
-    const modifications: Record<string, string> = { [requiredEnv('CREATOMATE_SCRIPT_ELEMENT')]: input.script };
-
-    const imageElements = requiredEnv('CREATOMATE_IMAGE_ELEMENTS').split(',').map(name => name.trim()).filter(Boolean);
-
-    if (imageElements.length < input.imageUrls.length) throw new AppError('unavailable', 'O template não tem campos de imagem suficientes.');
-
-    input.imageUrls.forEach((url, index) => {
-      modifications[imageElements[index]] = url;
-    });
-
-    const webhookUrl = servicePublicUrl('/webhooks/creatomate');
-
-    if (webhookUrl.protocol !== 'https:') throw new AppError('unavailable', 'A URL pública do serviço precisa usar HTTPS para o webhook do Creatomate.');
-
+  async render (input: { submissionId: string; script: string; imageUrls: string[] }) {
+    const modifications = this.modifications(input.script, input.imageUrls);
+    const webhookUrl = httpsWebhookUrl('/webhooks/creatomate', 'do Creatomate');
     webhookUrl.searchParams.set('token', requiredEnv('CREATOMATE_WEBHOOK_SECRET'));
 
     this.logger.log(`Solicitando render MP4 ao Creatomate. submissionId=${input.submissionId} imagens=${input.imageUrls.length}`);
-    const result = await this.externalApiProvider.json<{ id?: string } | { id?: string }[]>
-      (api, {
-        method: 'POST', headers: this.headers(),
-        body: JSON.stringify({
-          template_id: requiredEnv('CREATOMATE_TEMPLATE_ID'),
-          output_format: 'mp4', modifications,
-          webhook_url: webhookUrl.toString(),
-          metadata: input.submissionId
-        }),
-      });
-
+    const result = await this.externalApiProvider.json<{ id?: string } | { id?: string }[]>(api, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        template_id: requiredEnv('CREATOMATE_TEMPLATE_ID'), output_format: 'mp4', modifications,
+        webhook_url: webhookUrl.toString(), metadata: input.submissionId,
+      }),
+    });
     const render = Array.isArray(result) ? result[0] : result;
 
     if (!render?.id) throw new AppError('upstream', 'Creatomate não identificou o render solicitado.');
@@ -54,37 +39,32 @@ export class CreatomateProvider implements VideoProvider {
     return render.id;
   }
 
-  async download(source: string): Promise<Readable> {
+  async download (source: string): Promise<Readable> {
     const url = new URL(source);
     const hosts = (process.env.CREATOMATE_ASSET_HOSTS || 'cdn.creatomate.com').split(',').map(host => host.trim());
 
-    if (url.protocol !== 'https:' || url.port || url.username || url.password || !hosts.includes(url.hostname)) {
-      throw new AppError('upstream', 'Host de mídia do render não autorizado.');
-    }
+    if (!isPlainHttpsUrl(url) || !hosts.includes(url.hostname)) throw new AppError('upstream', 'Host de mídia do render não autorizado.');
 
-    const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(120_000) });
-
-    if (!response.ok || !response.body || Number(response.headers.get('content-length')) > maxBytes) {
-      await response.body?.cancel();
-      throw new AppError('upstream', 'Arquivo de render inválido ou acima de 250 MB.');
-    }
-
-    const body = Readable.fromWeb(response.body as NodeReadableStream<Uint8Array>);
-    return Readable.from(this.limit(body));
+    return downloadLimited(url, {
+      maxBytes, timeoutMs: 120_000,
+      invalidMessage: 'Arquivo de render inválido ou acima de 250 MB.', oversizedMessage: 'Arquivo de render acima de 250 MB.',
+    });
   }
 
-  private async *limit(body: Readable) {
-    let total = 0;
-    for await (const chunk of body) {
-      total += chunk.length;
+  // Preenche os campos dinâmicos do template: o roteiro e as fotos na ordem informada.
+  private modifications (script: string, imageUrls: string[]) {
+    const modifications: Record<string, string> = { [requiredEnv('CREATOMATE_SCRIPT_ELEMENT')]: script };
+    const imageElements = requiredEnv('CREATOMATE_IMAGE_ELEMENTS').split(',').map(name => name.trim()).filter(Boolean);
 
-      if (total > maxBytes) throw new AppError('upstream', 'Arquivo de render acima de 250 MB.');
+    if (imageElements.length < imageUrls.length) throw new AppError('unavailable', 'O template não tem campos de imagem suficientes.');
 
-      yield chunk as Buffer;
-    }
+    imageUrls.forEach((url, index) => {
+      modifications[imageElements[index]] = url;
+    });
+    return modifications;
   }
 
-  private headers() {
+  private headers () {
     return { Authorization: 'Bearer ' + requiredEnv('CREATOMATE_API_KEY'), 'Content-Type': 'application/json' };
   }
 }

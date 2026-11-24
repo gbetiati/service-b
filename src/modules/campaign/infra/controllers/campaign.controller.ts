@@ -1,13 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
-import { TenantGuard } from '@/modules/identity/infra/guards/tenant.guard';
-import { JwtAuthGuard } from '@/modules/identity/infra/jwt/jwt-auth.guard';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
 import { CreateCampaignDto } from '../../application/dto/create-campaign.dto';
 import { CreateCampaignUseCase } from '../../application/use-cases/create-campaign.usecase';
 import { GetCampaignUseCase } from '../../application/use-cases/get-campaign.usecase';
 import { ListCampaignUseCase } from '../../application/use-cases/list-campaign.usecase';
 
 @Controller('campaigns')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Authenticated()
 export class CampaignController {
   constructor(
     private readonly createCampaignUseCase: CreateCampaignUseCase,

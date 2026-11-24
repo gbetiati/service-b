@@ -1,20 +1,21 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
-import { TenantGuard } from '@/modules/identity/infra/guards/tenant.guard';
-import { JwtAuthGuard } from '@/modules/identity/infra/jwt/jwt-auth.guard';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
 import { CreateScheduledPublicationDto } from '../../application/dto/create-scheduled-publication.dto';
 import { PreparePublicationDto } from '../../application/dto/prepare-publication.dto';
 import { SchedulePublicationDto } from '../../application/dto/schedule-publication.dto';
 import { CreateScheduledPublicationUseCase } from '../../application/use-cases/create-scheduled-publication.usecase';
+import { GetPublicationScheduleUseCase } from '../../application/use-cases/get-publication-schedule.usecase';
 import { GetPublicationUseCase } from '../../application/use-cases/get-publication.usecase';
 import { PublicationOrchestrator } from '../../application/use-cases/publication.orchestrator';
 import { SchedulePublicationUseCase } from '../../application/use-cases/schedule-publication.usecase';
 
 @Controller('publications')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Authenticated()
 export class PublicationController {
   constructor(
     private readonly schedulePublicationUseCase: SchedulePublicationUseCase,
     private readonly getPublicationUseCase: GetPublicationUseCase,
+    private readonly getPublicationScheduleUseCase: GetPublicationScheduleUseCase,
     private readonly publicationOrchestrator: PublicationOrchestrator,
     private readonly createScheduledPublicationUseCase: CreateScheduledPublicationUseCase,
   ) {}
@@ -37,7 +38,7 @@ export class PublicationController {
 
   @Get('schedules/:id')
   getSchedule (@Param('id', ParseUUIDPipe) id: string) {
-    return this.getPublicationUseCase.schedule(id);
+    return this.getPublicationScheduleUseCase.execute(id);
   }
 
   @Get(':id')

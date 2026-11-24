@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AppError } from '@/shared/core/errors/app.error';
-import { VideoTranscriptionRepository } from '../../domain/repositories/video-transcription.repository';
+import type { Transcript } from '../../domain/entities/transcript';
+import { TranscriptionTarget, VideoTranscriptionRepository } from '../../domain/repositories/video-transcription.repository';
 
 @Injectable()
 export class PrismaVideoTranscriptionRepository implements VideoTranscriptionRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  claim ({ companyId, contentId, revision }: Parameters<VideoTranscriptionRepository['claim']>[0]) {
+  claim ({ companyId, contentId, revision }: TranscriptionTarget) {
     const submissionId = randomUUID();
 
     return this.prisma.$transaction(async tx => {
@@ -28,7 +29,7 @@ export class PrismaVideoTranscriptionRepository implements VideoTranscriptionRep
     });
   }
 
-  async finish (submissionId: string, result: Parameters<VideoTranscriptionRepository['finish']>[1]) {
+  async finish (submissionId: string, result: Transcript | null) {
     await this.prisma.content.updateMany({
       where: { transcriptionSubmissionId: submissionId, transcriptionStatus: 'PENDING' },
       data: { transcription: result?.text ?? null, subtitleSrt: result?.srt ?? null, transcriptionStatus: result ? 'READY' : 'FAILED' },

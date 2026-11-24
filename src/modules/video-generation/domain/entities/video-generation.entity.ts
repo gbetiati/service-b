@@ -1,7 +1,10 @@
 import { ScriptBrief } from '@/modules/content/domain/providers/script.provider';
 
 export type VideoStatus = 'PENDING_SCRIPT' | 'SCRIPT_GENERATING' | 'PENDING' | 'SUBMITTING' | 'RENDERING' | 'READY' | 'FAILED';
-export type RenderInput = { script: string; imageKeys: string[]; brief: ScriptBrief };
+export type RenderProduct = { name: string; description: string | null; price: string | null; oldPrice: string | null };
+
+// `product` é opcional porque gerações antigas foram salvas sem ele.
+export type RenderInput = { script: string; imageKeys: string[]; brief: ScriptBrief; product?: RenderProduct };
 
 export type VideoGeneration = {
   id: string;

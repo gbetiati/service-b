@@ -1,11 +1,11 @@
-import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, MaxLength, IsUUID, ValidateIf } from 'class-validator';
-
-const provided = (_: unknown, value: unknown) => value !== undefined;
+import { IsNotEmpty, IsNumber, IsString, Max, MaxLength, Min, IsUUID } from 'class-validator';
+import { ValidateIfProvided, Trim } from '@/shared/core/validation/decorators';
 
 export class CreateProductDto {
-  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @Trim()
   @IsString() @IsNotEmpty() @MaxLength(160) name!: string;
   @IsUUID() brandId!: string;
-  @ValidateIf(provided) @IsString() @MaxLength(4000) description?: string;
+  @ValidateIfProvided() @IsString() @MaxLength(4000) description?: string;
+  @ValidateIfProvided() @IsNumber({ maxDecimalPlaces: 2, allowNaN: false, allowInfinity: false }) @Min(0) @Max(9_999_999_999.99) price?: number;
+  @ValidateIfProvided() @IsNumber({ maxDecimalPlaces: 2, allowNaN: false, allowInfinity: false }) @Min(0) @Max(9_999_999_999.99) oldPrice?: number;
 }

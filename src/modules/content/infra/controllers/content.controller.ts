@@ -1,6 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '@/modules/identity/infra/jwt/jwt-auth.guard';
-import { TenantGuard } from '@/modules/identity/infra/guards/tenant.guard';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
 import { CreateContentDto } from '../../application/dto/create-content.dto';
 import { UpdateContentDto } from '../../application/dto/update-content.dto';
 import { ContentPageDto } from '../../application/dto/content-page.dto';
@@ -12,7 +11,7 @@ import { GetContentHistoryUseCase } from '../../application/use-cases/get-conten
 import { ListContentUseCase } from '../../application/use-cases/list-content.usecase';
 
 @Controller('contents')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Authenticated()
 export class ContentController {
   constructor(
     private readonly createContentUseCase: CreateContentUseCase,
@@ -20,7 +19,7 @@ export class ContentController {
     private readonly getContentDetailsUseCase: GetContentDetailsUseCase,
     private readonly getContentHistoryUseCase: GetContentHistoryUseCase,
     private readonly listContentUseCase: ListContentUseCase,
-  ) { }
+  ) {}
 
   @Post()
   async create (@Body() dto: CreateContentDto) {

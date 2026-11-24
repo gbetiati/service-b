@@ -23,7 +23,7 @@ export class PrismaPublicationRepository implements PublicationRepository {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly requestContext: RequestContext,
-  ) { }
+  ) {}
 
   async createScheduled (input: CreatePublicationScheduleInput, client: Prisma.TransactionClient = this.prismaService) {
     const { publication } = await client.contentScheduled.create({

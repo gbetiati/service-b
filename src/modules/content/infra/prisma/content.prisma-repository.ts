@@ -115,7 +115,7 @@ export class PrismaContentRepository implements ContentRepository {
 
   private fields (content: Content) {
     const { aiScript, editorial, campaingId, campaingRulesId, productId } = content.fields;
-    return { aiScript, editorial, campaingId, campaingRulesId, productId, scriptStatus: aiScript.trim() ? 'READY' as const : 'NOT_STARTED' as const };
+    return { aiScript, editorial, campaingId, campaingRulesId, productId, scriptStatus: Content.scriptStatusFor(aiScript) };
   }
 
   private relations (content: Content) {

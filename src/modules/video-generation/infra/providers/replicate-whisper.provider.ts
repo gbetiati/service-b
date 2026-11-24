@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { requiredEnv, servicePublicUrl } from '@/shared/core/config';
+import { httpsWebhookUrl, requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
 import { ExternalApiProvider } from '@/shared/libs/http/external-api.provider';
 import { VideoTranscriptionProvider } from '../../domain/providers/video-transcription.provider';
@@ -11,11 +11,7 @@ export class ReplicateWhisperProvider implements VideoTranscriptionProvider {
   constructor(private readonly externalApiProvider: ExternalApiProvider) {}
 
   async transcribe (submissionId: string, videoUrl: string) {
-    const webhook = servicePublicUrl('/webhooks/replicate/transcription');
-    if (webhook.protocol !== 'https:') {
-      throw new AppError('unavailable', 'A URL pública do serviço precisa usar HTTPS para o webhook da Replicate.');
-    }
-
+    const webhook = httpsWebhookUrl('/webhooks/replicate/transcription', 'da Replicate');
     requiredEnv('REPLICATE_WEBHOOK_SECRET');
     webhook.searchParams.set('submissionId', submissionId);
     const prediction = await this.externalApiProvider.json<{ id?: unknown } | null>('https://api.replicate.com/v1/predictions', {

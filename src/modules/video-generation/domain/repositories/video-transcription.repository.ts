@@ -1,6 +1,9 @@
-export abstract class VideoTranscriptionRepository {
-  abstract claim (input: { companyId: string; contentId: string; revision: number }):
-    Promise<{ submissionId: string; storageKey: string } | null>;
+import type { Transcript } from '../entities/transcript';
 
-  abstract finish (submissionId: string, result: { text: string; srt: string } | null): Promise<void>;
+export type TranscriptionTarget = { companyId: string; contentId: string; revision: number };
+
+export abstract class VideoTranscriptionRepository {
+  abstract claim (input: TranscriptionTarget): Promise<{ submissionId: string; storageKey: string } | null>;
+
+  abstract finish (submissionId: string, result: Transcript | null): Promise<void>;
 }
