@@ -17,12 +17,13 @@ async function freePort () {
   return port;
 }
 
-test('remotion provider: render in background, signed internal webhook and preparation ready for publication', { timeout: 60_000 }, async () => {
+test('claude script + remotion: script in background, brand voice and colors, video ready for publication', { timeout: 90_000 }, async () => {
   assert.ok(process.env.TEST_DATABASE_URL, 'Configure TEST_DATABASE_URL with a dedicated test instance.');
   const port = await freePort();
   Object.assign(process.env, {
     DATABASE_URL: process.env.TEST_DATABASE_URL, JWT_SECRET: randomUUID() + randomUUID(), NODE_ENV: 'test', PORT: String(port),
-    VIDEO_PROVIDER: 'remotion', VIDEO_REVIEW_ENABLED: 'true', ANTHROPIC_API_KEY: 'test-key',
+    ANTHROPIC_API_KEY: 'test-key',
+    INTERNAL_WEBHOOK_SECRET: 'whsec_' + Buffer.from(randomUUID()).toString('base64'),
     REMOTION_WEBHOOK_SECRET: 'whsec_' + Buffer.from(randomUUID()).toString('base64'),
   });
   const { AppModule } = require('../dist/app.module');
@@ -30,8 +31,11 @@ test('remotion provider: render in background, signed internal webhook and prepa
   const { AppErrorFilter } = require('../dist/shared/core/errors/app-error.filter');
   const { StorageProvider } = require('../dist/shared/libs/storage/storage.provider');
   const { CopyWriterProvider } = require('../dist/modules/video-generation/domain/providers/copy-writer.provider');
-  const { VideoReviewProvider } = require('../dist/modules/video-generation/domain/providers/video-review.provider');
   const { RemotionCliRenderer } = require('../dist/modules/video-generation/infra/remotion/remotion-cli.renderer');
+  const { ClaudeScriptProvider } = require('../dist/modules/content/infra/providers/claude-script.provider');
+  const { ScriptProvider } = require('../dist/modules/content/domain/providers/script.provider');
+  const scenes = { hook: 'Corra mais leve', benefits: ['Amortecimento macio', 'Cabedal respirável'], callToAction: 'Garanta o seu' };
+  const claudeCalls = [];
 
   const objects = new Map();
   const renders = [];
@@ -47,6 +51,8 @@ test('remotion provider: render in background, signed internal webhook and prepa
       url: async key => 'https://storage.invalid/' + key,
       remove: async key => { objects.delete(key); },
     })
+    // O app pode estar com o roteiro simulado (TESTE mock); este teste exercita sempre o provider do Claude.
+    .overrideProvider(ScriptProvider).useFactory({ factory: claude => claude, inject: [ClaudeScriptProvider] })
     .overrideProvider(CopyWriterProvider).useValue({
       write: async brief => {
         briefs.push(brief);
@@ -59,17 +65,14 @@ test('remotion provider: render in background, signed internal webhook and prepa
         writeFileSync(input.outputPath, 'remotion mp4');
       },
     })
-    .overrideProvider(VideoReviewProvider).useValue({
-      review: async video => {
-        const chunks = [];
-        for await (const chunk of video) chunks.push(chunk);
-        assert.equal(Buffer.concat(chunks).toString(), 'remotion mp4');
-        return { status: 'APPROVED', reason: 'Produto confere.', ocr: [] };
-      },
-    })
     .compile();
 
   const app = module.createNestApplication({ rawBody: true });
+  // Substitui só o cliente da API: o provider real roda o fluxo em background e o webhook interno.
+  app.get(ClaudeScriptProvider).client = { beta: { messages: { parse: async params => {
+    claudeCalls.push(params);
+    return { stop_reason: 'end_turn', parsed_output: scenes };
+  } } } };
   const db = app.get(PrismaService);
   let companyId;
   try {
@@ -94,7 +97,7 @@ test('remotion provider: render in background, signed internal webhook and prepa
     const post = (route, token, body, status = 201) => call(route, { method: 'POST', token, body, status });
 
     async function poll (read, done) {
-      for (let attempt = 0; attempt < 60; attempt++) {
+      for (let attempt = 0; attempt < 120; attempt++) {
         const value = await read();
         if (done(value)) return value;
         await delay(250);
@@ -105,7 +108,17 @@ test('remotion provider: render in background, signed internal webhook and prepa
     const signup = await post('/auth/signup', undefined, { companyName: 'Empresa Remotion', email: randomUUID() + '@example.com', password: 'sua-senha-de-teste' });
     companyId = signup.companyId;
     const token = signup.accessToken;
-    const brand = await post('/brands', token, { name: 'Marca Run' });
+    const brand = await post('/brands', token, {
+      name: 'Marca Run', primaryColor: '#FF5500', secondaryColor: '#1a1a1a', tertiaryColor: '#EC4899', quaternaryColor: '#fbcfe8',
+      voiceTone: 'Enérgico e motivador', targetAudience: 'Corredores iniciantes', copyGuidelines: 'Destacar conforto; evitar jargão técnico.',
+    });
+    assert.equal(brand.primaryColor, '#ff5500', 'colors are stored in lowercase');
+    assert.equal(brand.tertiaryColor, '#ec4899');
+    assert.equal(brand.quaternaryColor, '#fbcfe8');
+    assert.equal(brand.voiceTone, 'Enérgico e motivador');
+    assert.deepEqual((await call('/brands/' + brand.id, { token })).copyGuidelines, 'Destacar conforto; evitar jargão técnico.');
+    await post('/brands', token, { name: 'Cor inválida', primaryColor: 'laranja' }, 400);
+    assert.equal((await post('/brands', token, { name: 'Sem perfil' })).primaryColor, null);
     const product = await post('/products', token, { brandId: brand.id, name: 'Tênis Run', description: 'Leve', price: 199.9, oldPrice: 249.9 });
     const campaign = await post('/campaigns', token, { brandId: brand.id, name: 'Lançamento' });
     const rules = await post('/campaign-rules', token, { campaingId: campaign.id, name: 'Regra', guidelines: 'Usar fotos reais.' });
@@ -113,9 +126,11 @@ test('remotion provider: render in background, signed internal webhook and prepa
     const image = await sharp({ create: { width: 32, height: 32, channels: 3, background: '#224466' } }).png().toBuffer();
     file.set('file', new Blob([image], { type: 'image/png' }), 'reference.png');
     const asset = await post('/products/' + product.id + '/media', token, file);
-    const content = await post('/contents', token, {
-      campaingId: campaign.id, campaingRulesId: rules.id, productId: product.id, mediaAssetIds: [asset.id], aiScript: 'Roteiro já aprovado.',
-    });
+    const content = await post('/contents', token, { campaingId: campaign.id, campaingRulesId: rules.id, productId: product.id, mediaAssetIds: [asset.id] });
+    const formatted = 'Gancho: Corra mais leve\nBenefícios:\n- Amortecimento macio\n- Cabedal respirável\nChamada: Garanta o seu';
+    assert.equal(content.aiScript, formatted, 'content creation writes the script with Claude');
+    // Força o caminho assíncrono do orchestrator: roteiro em background avisado pelo webhook interno.
+    await db.content.update({ where: { id: content.id }, data: { aiScript: '', scriptStatus: 'NOT_STARTED' } });
 
     const preparePath = '/publications/contents/' + content.id + '/prepare';
     assert.deepEqual(await post(preparePath, token, undefined, 202), { contentId: content.id, revision: 1, status: 'PENDING' });
@@ -126,9 +141,16 @@ test('remotion provider: render in background, signed internal webhook and prepa
     assert.equal(prepared.subtitleStatus, 'READY');
     assert.equal(prepared.transcription, '');
 
-    assert.deepEqual(briefs, [{ name: 'Tênis Run', description: 'Leve', brand: 'Marca Run' }]);
+    assert.equal(prepared.aiScript, formatted);
+    assert.equal(claudeCalls.length, 2, 'one script on creation and one in background');
+    assert.match(claudeCalls[1].messages[0].content, /"voiceTone":"Enérgico e motivador"[\s\S]*"targetAudience":"Corredores iniciantes"/);
+    assert.deepEqual(briefs, [], 'the scene script becomes the copy without the copy writer');
     assert.equal(renders.length, 1);
-    assert.equal(renders[0].compositionId, 'ProductAd-9x16');
+    const { primaryColor, secondaryColor } = renders[0].props.brand;
+    const brandColors = ['#ff5500', '#1a1a1a', '#ec4899', '#fbcfe8'];
+    assert.ok(brandColors.includes(primaryColor) && brandColors.includes(secondaryColor) && primaryColor !== secondaryColor, 'two brand colors drawn for this render');
+    assert.deepEqual(renders[0].props.copy.bullets, scenes.benefits);
+    assert.match(renders[0].compositionId, /^ProductAd(Editorial|Kinetic)?-9x16$/, 'one of the registered templates, in the Reels format');
     assert.equal(renders[0].props.product.price, 'R$ 199,90');
     assert.equal(renders[0].props.product.oldPrice, 'R$ 249,90');
     assert.equal(renders[0].props.copy.headline, 'Corra mais leve');

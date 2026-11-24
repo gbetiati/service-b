@@ -1,14 +1,12 @@
 import type { Readable } from 'node:stream';
-import type { RenderProduct } from '../entities/video-generation.entity';
+import type { ScriptBrief } from '@/modules/content/domain/providers/script.provider';
+import type { RenderBrand, RenderProduct } from '../entities/video-generation.entity';
 
-// `narrated: false` indica um vídeo sem fala, que dispensa transcrição e legendas.
+// `narrated: false` indica um vídeo sem fala: as etapas de transcrição e legendas ficam prontas sem texto.
 export type RenderOutcome = { state: 'failed' } | { state: 'ready'; url: string; narrated?: boolean };
 export type RenderResult = { submissionId: string; providerId: string; outcome: RenderOutcome };
 
-// Cada provedor usa o que precisa: roteiro e fotos (Creatomate, Replicate) ou dados do produto (Remotion).
-export type RenderRequest = { submissionId: string; script: string; imageUrls: string[]; brand: string; product?: RenderProduct };
-
-export const VIDEO_RENDER_PROVIDER = Symbol('VIDEO_RENDER_PROVIDER');
+export type RenderRequest = { submissionId: string; script: string; imageUrls: string[]; brand: RenderBrand; brief: ScriptBrief; product?: RenderProduct };
 
 // O render é assíncrono: `render` devolve o ID no provedor e o resultado chega por webhook.
 export abstract class VideoProvider {

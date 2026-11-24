@@ -25,11 +25,8 @@ export function servicePublicUrl (path: string): URL {
   return new URL(path, url);
 }
 
-// URL pública HTTPS para o provedor externo chamar o webhook. `provider` completa a mensagem, como "do Creatomate".
-export function httpsWebhookUrl (path: string, provider: string): URL {
-  const url = servicePublicUrl(path);
-
-  if (url.protocol !== 'https:') throw new AppError('unavailable', 'A URL pública do serviço precisa usar HTTPS para o webhook ' + provider + '.');
-
-  return url;
+// URL de um webhook interno (avisos que a própria aplicação envia a si mesma). Por padrão, a instância local.
+export function internalWebhookUrl (path: string): URL {
+  const base = process.env.INTERNAL_WEBHOOK_BASE_URL?.trim() || `http://127.0.0.1:${process.env.PORT?.trim() || '3000'}`;
+  return new URL(path, base);
 }

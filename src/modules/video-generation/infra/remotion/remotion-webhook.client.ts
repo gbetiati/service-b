@@ -12,7 +12,7 @@ export type RemotionRenderEvent = { submissionId: string; providerId: string } &
 const RETRY_DELAYS_MS = [2_000, 10_000, 30_000, 60_000];
 const REQUEST_TIMEOUT_MS = 180_000;
 
-// Avisa o fim do render no mesmo formato assinado (Standard Webhooks) usado pela Replicate.
+// Avisa o fim do render no formato assinado Standard Webhooks.
 @Injectable()
 export class RemotionWebhookClient {
   private readonly logger = new Logger(RemotionWebhookClient.name);

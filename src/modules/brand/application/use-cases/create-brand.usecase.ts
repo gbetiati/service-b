@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { RequestContext } from '@/shared/core/request-context/request-context';
-
 import { Brand } from '../../domain/entities/brand.entity';
 import { BrandRepository } from '../../domain/repositories/brand.repository';
 import { CreateBrandDto } from '../dto/create-brand.dto';
@@ -13,7 +12,8 @@ export class CreateBrandUseCase {
   ) {}
 
   execute (dto: CreateBrandDto) {
-    const entity = Brand.create(this.requestContext.companyId, dto.name);
+    const { name, ...profile } = dto;
+    const entity = Brand.create(this.requestContext.companyId, name, profile);
     return this.brandRepository.create(entity);
   }
 }

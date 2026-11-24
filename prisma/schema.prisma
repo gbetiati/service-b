@@ -96,11 +96,18 @@ model Brand {
   id        String     @id @default(uuid())
   companyId String
   company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name      String
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  campaigns Campaign[]
-  products  Product[]
+  name           String
+  primaryColor   String?
+  secondaryColor String?
+  tertiaryColor  String?
+  quaternaryColor String?
+  voiceTone      String?
+  targetAudience String?
+  copyGuidelines String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  campaigns      Campaign[]
+  products       Product[]
 
   @@unique([companyId, id])
   @@map("brands")
@@ -387,6 +394,3 @@ model Publication {
   @@index([status, updatedAt])
   @@map("publications")
 }
-
-
-// Job do módulo product-video. companyId/productId sem @relation para não alterar os models existentes.

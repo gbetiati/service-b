@@ -1,16 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { ScriptProvider } from '@/modules/content/domain/providers/script.provider';
+import type { ScriptResult } from '@/modules/content/domain/providers/script.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
+// Registra o roteiro (ou a falha) que o provedor entregou por webhook, seja OpenAI ou Claude.
 @Injectable()
 export class CompleteScriptGenerationUseCase {
   constructor(
-    private readonly scriptProvider: ScriptProvider,
     private readonly videoGenerationRepository: VideoGenerationRepository,
   ) {}
 
-  async execute (responseId: string) {
-    const scriptResult = await this.scriptProvider.readResult(responseId);
-    return scriptResult && this.videoGenerationRepository.completeScript(scriptResult);
+  execute (result: ScriptResult) {
+    return this.videoGenerationRepository.completeScript(result);
   }
 }

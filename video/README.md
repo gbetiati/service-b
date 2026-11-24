@@ -1,9 +1,12 @@
 # Anúncio de produto (Remotion)
 
-Templates usados pelo provider Remotion do módulo `src/modules/video-generation` (`VIDEO_PROVIDER=remotion`). O backend chama a CLI deste projeto (`node_modules/.bin/remotion render`) com `execFile`. O `nest build` não compila nada daqui, porque o `tsconfig.json` da raiz só inclui `src/`.
+Templates usados pelo provider Remotion do módulo `src/modules/video-generation`. O backend chama a CLI deste projeto (`node_modules/.bin/remotion render`) com `execFile`. O `nest build` não compila nada daqui, porque o `tsconfig.json` da raiz só inclui `src/`.
 
-- `src/Root.tsx` registra, a partir de `src/modules/video-generation/infra/remotion/product-ad.compositions.ts`, `ProductAd-9x16` (1080x1920), `ProductAd-1x1` (1080x1080) e `ProductAd-16x9` (1920x1080), todos a 30 fps com 12 s. O fluxo de publicação usa `ProductAd-9x16` (Reels).
-- `src/templates/ProductAd.tsx` tem 4 cenas: produto com zoom e headline, bullets, preço (com o preço antigo riscado, se houver) e CTA com logo.
+- `src/Root.tsx` registra, a partir de `src/modules/video-generation/infra/remotion/product-ad.compositions.ts`, três templates em três formatos cada (`<Template>-9x16`, `-1x1` e `-16x9`), todos a 30 fps com 12 s. O fluxo de publicação usa o formato 9x16 (Reels) e sorteia o template a cada render, com o ID do render como semente.
+  - `ProductAd`: foto em tela cheia com headline, benefícios sobre a foto desfocada, preço (com o preço antigo riscado, se houver) e CTA com logo.
+  - `ProductAdEditorial`: estilo revista. Fundo na cor principal, foto em cartão, headline palavra por palavra, benefícios numerados, preço em selo e CTA com sublinhado animado.
+  - `ProductAdKinetic`: tipografia em movimento. Headline em tela cheia palavra por palavra, foto revelada por um círculo, uma tela por benefício alternando as cores da marca, preço com impacto e CTA sobre faixas diagonais.
+- `src/templates/shared.tsx` tem o que os templates compartilham: fonte, escala por formato (`useLayout`), entrada com mola (`useEnter`), foto e cor de texto por contraste (`readableOn`). Um template novo deve receber `ProductAdProps`, durar `PRODUCT_AD_DURATION_IN_FRAMES` e entrar em `PRODUCT_AD_TEMPLATES` e no mapa de `Root.tsx`.
 - As props usam o tipo `ProductAdProps` de `src/modules/video-generation/domain/entities/product-ad.ts`, compartilhado com o backend. Esse arquivo e o de composições não podem ter imports.
 - A fonte Inter (licença OFL, em `public/fonts`) é local, então o render não depende de rede para a tipografia.
 
@@ -20,14 +23,14 @@ npx remotion browser ensure   # baixa o Chrome Headless Shell antes do primeiro 
 ```bash
 cd video
 npx remotion render src/index.ts ProductAd-9x16 out/sample-9x16.mp4 --props=./sample-props.json
-# repita com ProductAd-1x1 e ProductAd-16x9
+# repita com os outros formatos (-1x1, -16x9) e templates (ProductAdEditorial, ProductAdKinetic)
 ```
 
 No macOS 26, o Chrome Headless Shell 158 trava (`icudtl.dat not found` / `Target closed`). Nesse caso, adicione `--chrome-mode=chrome-for-testing` e defina `REMOTION_CHROME_MODE=chrome-for-testing` no backend. Em Linux/Docker, o modo padrão funciona.
 
 Para testar o fluxo completo pela API:
 
-1. Configure `VIDEO_PROVIDER=remotion`, `REMOTION_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY` e S3.
+1. Configure `REMOTION_WEBHOOK_SECRET`, `INTERNAL_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY` e S3.
 2. Crie um produto com `price` (e, opcionalmente, `oldPrice`) e associe uma foto em `POST /products/:id/media`.
 3. Crie o conteúdo com `POST /contents` e inicie a preparação com `POST /publications/contents/:id/prepare`.
 4. Consulte `GET /contents/:id/video-generations` até `status: READY` e abra a `video.url`.

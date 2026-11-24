@@ -1,9 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
-import type { RenderInput } from '../../domain/entities/video-generation.entity';
-import { VideoAsset, type VideoReview } from '../../domain/entities/video-asset.entity';
+import { VideoAsset } from '../../domain/entities/video-asset.entity';
 import { RenderResult, VideoProvider } from '../../domain/providers/video.provider';
-import { VideoReviewProvider } from '../../domain/providers/video-review.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
 @Injectable()
@@ -13,7 +11,6 @@ export class CompleteVideoGenerationUseCase {
   constructor(
     private readonly videoGenerationRepository: VideoGenerationRepository,
     private readonly videoProvider: VideoProvider,
-    private readonly videoReviewProvider: VideoReviewProvider,
     private readonly storageProvider: StorageProvider,
   ) {}
 
@@ -39,7 +36,7 @@ export class CompleteVideoGenerationUseCase {
         await this.videoGenerationRepository.fail(generation, 'O provedor rejeitou o render.');
         this.logger.warn(`Render rejeitado pelo provedor. ${context}`);
       } else {
-        const { companyId, contentId, id, revision, input } = generation;
+        const { companyId, contentId, id, revision } = generation;
         const key = VideoAsset.storageKeyFor(companyId, contentId, id);
         try {
           await this.storageProvider.put(key, await download(outcome.url), 'video/mp4');
@@ -50,7 +47,8 @@ export class CompleteVideoGenerationUseCase {
         }
 
         this.logger.log(`MP4 salvo no storage. ${context}`);
-        const review = await this.review(key, input);
+        // Sem revisão automática: todo vídeo concluído é aprovado.
+        const review = VideoAsset.skippedReview();
         await this.videoGenerationRepository.complete(generation, new VideoAsset(id, companyId, contentId, id, revision, key, review), outcome.narrated ?? true);
         this.logger.log(`Processamento do render concluído. ${context} revisão=${review.status}`);
       }
@@ -61,14 +59,5 @@ export class CompleteVideoGenerationUseCase {
       await this.videoGenerationRepository.release(generation);
       throw error;
     }
-  }
-
-  private async review (key: string, input: RenderInput): Promise<VideoReview> {
-    // TESTE (mock): revisão automática comentada; todo vídeo é aprovado.
-    return VideoAsset.skippedReview();
-    // if (process.env.VIDEO_REVIEW_ENABLED === 'false') return VideoAsset.skippedReview();
-    //
-    // const references = await Promise.all(input.imageKeys.map(image => this.storageProvider.url(image)));
-    // return this.videoReviewProvider.review(await this.storageProvider.open(key), input, references);
   }
 }

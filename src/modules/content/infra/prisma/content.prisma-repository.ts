@@ -13,6 +13,9 @@ const include = {
   assets: { orderBy: { position: 'asc' } }, products: { orderBy: { productId: 'asc' } },
 } satisfies Prisma.ContentInclude;
 type Row = Prisma.ContentGetPayload<{ include: typeof include }>;
+const referencedBrandFields = {
+  name: true, primaryColor: true, secondaryColor: true, tertiaryColor: true, quaternaryColor: true, voiceTone: true, targetAudience: true, copyGuidelines: true,
+} as const;
 
 @Injectable()
 export class PrismaContentRepository implements ContentRepository {
@@ -80,7 +83,7 @@ export class PrismaContentRepository implements ContentRepository {
     const [campaign, rule, products, images] = await Promise.all([
       this.prismaService.campaign.findUnique({
         where: { companyId_id: { companyId, id: campaingId } },
-        select: { brandId: true, objective: true, brand: { select: { name: true } } },
+        select: { brandId: true, objective: true, brand: { select: referencedBrandFields } },
       }),
       this.prismaService.campaignRules.findUnique({
         where: { companyId_id: { companyId, id: campaingRulesId } },

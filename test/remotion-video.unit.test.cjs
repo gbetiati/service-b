@@ -14,7 +14,8 @@ const { RemotionWebhookClient } = require('../dist/modules/video-generation/infr
 const { RemotionSettings } = require('../dist/modules/video-generation/infra/remotion/remotion.settings');
 const { RenderSemaphore } = require('../dist/modules/video-generation/infra/remotion/render-semaphore');
 const { RemotionWebhookController } = require('../dist/modules/video-generation/infra/controllers/remotion-webhook.controller');
-const { ProductAdPolicy } = require('../dist/modules/video-generation/domain/entities/product-ad');
+const { ProductAdPolicy, contrastRatio, MIN_PALETTE_CONTRAST } = require('../dist/modules/video-generation/domain/entities/product-ad');
+const { seededRandom } = require('../dist/shared/core/random');
 const { AppError } = require('../dist/shared/core/errors/app.error');
 
 Logger.overrideLogger(false);
@@ -70,6 +71,8 @@ test('ad props take name, price and image from the product, never from the copy'
   assert.deepEqual(props.product, { name: 'Tênis', imageUrl: 'https://bucket/img.jpg', price: 'R$ 199,90', oldPrice: 'R$ 249,90' });
   assert.deepEqual(Object.keys(props.copy).sort(), ['bullets', 'cta', 'headline']);
   assert.equal(ProductAdPolicy.buildProps({ product: { name: 'A', price: '10.00', oldPrice: '9.00' }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000' }).product.oldPrice, undefined);
+  assert.deepEqual(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: null }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000', secondaryColor: '#ffffff' }).brand, { primaryColor: '#000000', secondaryColor: '#ffffff' });
+  assert.deepEqual(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: null }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000', secondaryColor: null }).brand, { primaryColor: '#000000' });
   assert.equal(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: '9.00' }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000' }).product.price, undefined);
   assert.ok(ProductAdPolicy.findCommercialClaim(copy));
   assert.equal(ProductAdPolicy.findCommercialClaim(validCopy), null);
@@ -127,7 +130,7 @@ test('RemotionSettings rejects invalid configuration and defaults the webhook to
   assert.equal(settings.webhookUrl, 'http://127.0.0.1:3999/webhooks/remotion');
 });
 
-function remotionHarness ({ copy = validCopy, render } = {}) {
+function remotionHarness ({ copy = validCopy, render, random = 0.1 } = {}) {
   const effects = [];
   const renders = [];
   const objects = new Map();
@@ -142,10 +145,15 @@ function remotionHarness ({ copy = validCopy, render } = {}) {
   };
   const client = { send: async payload => resolveEvent(payload) };
   const provider = new RemotionVideoProvider(writer, renderer, storage, client, new RenderSemaphore(1), settings);
-  return { provider, effects, renders, objects, event };
+  const seeds = [];
+  provider.randomFor = seed => { seeds.push(seed); return () => random; };
+  return { provider, effects, renders, objects, event, seeds };
 }
 
-const request = { submissionId: randomUUID(), script: 'Roteiro', imageUrls: ['https://storage.test/a.jpg', 'https://storage.test/b.jpg'], brand: 'Marca', product };
+const brand = { name: 'Marca', primaryColor: '#ff5500', secondaryColor: '#1a1a1a' };
+const brief = { brand: 'Marca', objective: null, guidelines: 'Usar fotos reais.', products: ['Tênis Run: Leve'], voiceTone: 'Enérgico', targetAudience: 'Corredores' };
+const request = { submissionId: randomUUID(), script: 'Roteiro livre da OpenAI.', imageUrls: ['https://storage.test/a.jpg', 'https://storage.test/b.jpg'], brand, brief, product };
+const sceneScript = 'Gancho: Corra mais leve\nBenefícios:\n- Amortecimento macio\n- Cabedal respirável\nChamada: Garanta o seu';
 
 test('RemotionVideoProvider renders in background, stores the MP4 and notifies success through the webhook', async () => {
   const h = remotionHarness();
@@ -156,7 +164,10 @@ test('RemotionVideoProvider renders in background, stores the MP4 and notifies s
   const event = await h.event;
   const storageKey = h.provider.outputKey(providerId);
   assert.deepEqual(event, { submissionId: request.submissionId, providerId, status: 'succeeded', storageKey });
-  assert.deepEqual(h.effects, [['copy', { name: 'Tênis Run', description: 'Leve', brand: 'Marca' }]]);
+  assert.deepEqual(h.effects, [['copy', {
+    name: 'Tênis Run', description: 'Leve', brand: 'Marca', voiceTone: 'Enérgico', targetAudience: 'Corredores', copyGuidelines: undefined, script: 'Roteiro livre da OpenAI.',
+  }]], 'a free-form script is condensed by the copy writer with the brand voice');
+  assert.deepEqual(h.renders[0].props.brand, { primaryColor: '#ff5500', secondaryColor: '#1a1a1a' });
   assert.equal(h.renders[0].compositionId, 'ProductAd-9x16');
   assert.equal(h.renders[0].props.product.price, 'R$ 199,90');
   assert.equal(h.renders[0].props.product.imageUrl, 'https://storage.test/a.jpg');
@@ -165,6 +176,38 @@ test('RemotionVideoProvider renders in background, stores the MP4 and notifies s
   assert.equal(h.objects.get(storageKey).toString(), 'mp4-bytes');
   assert.equal((await h.provider.download(storageKey)).toString(), 'mp4-bytes');
   await assert.rejects(h.provider.download('company/products/x.jpg'), /não autorizado/);
+});
+
+test('RemotionVideoProvider draws the brand palette from the render id', async () => {
+  const swapped = remotionHarness({ random: 0.9 });
+  const providerId = await swapped.provider.render(request);
+  await swapped.event;
+  assert.deepEqual(swapped.seeds, [providerId, providerId + ':template'], 'the render id seeds palette and template, so the choices are reproducible');
+  assert.deepEqual(swapped.renders[0].props.brand, { primaryColor: '#1a1a1a', secondaryColor: '#ff5500' });
+
+  const fourColors = remotionHarness({ random: 0.9 });
+  await fourColors.provider.render({ ...request, brand: { ...brand, tertiaryColor: '#ec4899', quaternaryColor: '#fbcfe8' } });
+  await fourColors.event;
+  assert.deepEqual(fourColors.renders[0].props.brand, { primaryColor: '#1a1a1a', secondaryColor: '#fbcfe8' }, 'a base color leads and a secondary color can support it');
+});
+
+test('RemotionVideoProvider draws one of the registered templates from the render id', async () => {
+  const draws = { 0.1: 'ProductAd-9x16', 0.5: 'ProductAdEditorial-9x16', 0.9: 'ProductAdKinetic-9x16' };
+  for (const [random, compositionId] of Object.entries(draws)) {
+    const h = remotionHarness({ random: Number(random) });
+    await h.provider.render(request);
+    await h.event;
+    assert.equal(h.renders[0].compositionId, compositionId);
+  }
+});
+
+test('RemotionVideoProvider turns a scene-formatted script into the copy without calling the copy writer', async () => {
+  const h = remotionHarness();
+  await h.provider.render({ ...request, script: sceneScript, brand: { name: 'Marca', primaryColor: null, secondaryColor: null } });
+  assert.equal((await h.event).status, 'succeeded');
+  assert.deepEqual(h.effects, [], 'copy writer not called');
+  assert.deepEqual(h.renders[0].props.copy, { headline: 'Corra mais leve', bullets: ['Amortecimento macio', 'Cabedal respirável'], cta: 'Garanta o seu' });
+  assert.deepEqual(h.renders[0].props.brand, { primaryColor: settings.primaryColor }, 'falls back to the configured color');
 });
 
 test('RemotionVideoProvider reports render failures and copies with commercial claims as failed renders', { skip: 'TESTE (mock): validações e publicação comentadas; reative junto com o código' }, async () => {
@@ -240,7 +283,7 @@ test('RemotionWebhookController completes the render as a video without speech a
   assert.deepEqual(calls[1].result, { submissionId, providerId, outcome: { state: 'failed' } });
 
   await assert.rejects(controller.receive(signedRequest({ submissionId, providerId, status: 'succeeded', storageKey: 'company/secret.mp4' })), /arquivo do vídeo/);
-  await assert.rejects(controller.receive(signedRequest({ submissionId, providerId: 'replicate:x', status: 'failed' })), /identificação/);
+  await assert.rejects(controller.receive(signedRequest({ submissionId, providerId: 'outro:x', status: 'failed' })), /identificação/);
   await assert.rejects(controller.receive(signedRequest({ submissionId, providerId, status: 'failed' }, 'whsec_' + Buffer.from('outro').toString('base64'))), error => error.kind === 'unauthorized');
   assert.equal(calls.length, 2);
 });
@@ -250,4 +293,45 @@ test('TESTE (mock): MockCopyWriterProvider builds copy within the template limit
   const copy = await new MockCopyWriterProvider().write({ name: 'Kit Iniciante para Limpeza de Vidros 7 em 1 - Moerman', description: null, brand: 'Moerman' });
   assert.equal(CopySchema.safeParse(copy).success, true, JSON.stringify(copy));
   assert.equal(ProductAdPolicy.findCommercialClaim(copy), null);
+});
+
+test('seededRandom repeats the same sequence for the same seed and stays within [0, 1)', () => {
+  const draw = seed => { const random = seededRandom(seed); return Array.from({ length: 50 }, random); };
+  assert.deepEqual(draw('remotion:abc'), draw('remotion:abc'));
+  assert.notDeepEqual(draw('remotion:abc'), draw('remotion:abd'));
+  assert.ok(draw('x').every(value => value >= 0 && value < 1));
+  const swaps = Array.from({ length: 400 }, (_, index) => seededRandom('render-' + index)() < 0.5).filter(Boolean).length;
+  assert.ok(swaps > 150 && swaps < 250, `both palette orders appear across renders (${swaps}/400)`);
+});
+
+test('pickPalette leads with a base color and only draws pairs with enough contrast', () => {
+  const two = { primaryColor: '#7b3f1d', secondaryColor: '#f5d6a8' };
+  assert.deepEqual(ProductAdPolicy.pickPalette(two, () => 0.1), two);
+  assert.deepEqual(ProductAdPolicy.pickPalette(two, () => 0.9), { primaryColor: '#f5d6a8', secondaryColor: '#7b3f1d' });
+
+  // Paleta da Amira Doces: marrom e creme como base, rosa pink e rosa fraquinho como secundárias.
+  const amira = { ...two, tertiaryColor: '#ec4899', quaternaryColor: '#fbcfe8' };
+  const pairs = new Set();
+  for (let index = 0; index < 300; index++) {
+    const { primaryColor, secondaryColor } = ProductAdPolicy.pickPalette(amira, seededRandom('render-' + index));
+    assert.ok(contrastRatio(primaryColor, secondaryColor) >= MIN_PALETTE_CONTRAST);
+    pairs.add(primaryColor + ' ' + secondaryColor);
+  }
+  assert.deepEqual([...pairs].sort(), [
+    '#7b3f1d #ec4899', '#7b3f1d #f5d6a8', '#7b3f1d #fbcfe8', '#f5d6a8 #7b3f1d', '#f5d6a8 #ec4899',
+  ], 'creme with rosa fraquinho (1.01:1) is never drawn, and the pinks never lead');
+
+  // Bases parecidas e sem secundárias: usa o par de maior contraste em vez de deixar de gerar.
+  const pastel = ProductAdPolicy.pickPalette({ primaryColor: '#f5d6a8', secondaryColor: '#fbcfe8' }, () => 0.1);
+  assert.deepEqual(pastel, { primaryColor: '#f5d6a8', secondaryColor: '#fbcfe8' });
+
+  assert.deepEqual(ProductAdPolicy.pickPalette({ primaryColor: '#7b3f1d', secondaryColor: null }, () => 0.9), { primaryColor: '#7b3f1d', secondaryColor: null });
+  assert.deepEqual(ProductAdPolicy.pickPalette({ primaryColor: null, secondaryColor: '#f5d6a8' }, () => 0.9), { primaryColor: null, secondaryColor: '#f5d6a8' });
+  assert.deepEqual(ProductAdPolicy.pickPalette({ ...two, tertiaryColor: '#7B3F1D' }, () => 0.9), { primaryColor: '#f5d6a8', secondaryColor: '#7b3f1d' }, 'repeated colors count once');
+});
+
+test('contrastRatio follows the WCAG formula', () => {
+  assert.equal(contrastRatio('#000000', '#ffffff').toFixed(1), '21.0');
+  assert.equal(contrastRatio('#7b3f1d', '#7b3f1d'), 1);
+  assert.equal(contrastRatio('#f5d6a8', '#fbcfe8').toFixed(2), '1.01');
 });

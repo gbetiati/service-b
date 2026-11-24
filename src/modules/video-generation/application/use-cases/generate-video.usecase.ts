@@ -1,12 +1,13 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ScriptProvider } from '@/modules/content/domain/providers/script.provider';
+import type { ContentReferences } from '@/modules/content/domain/entities/content.entity';
 import { ContentRepository } from '@/modules/content/domain/repositories/content.repository';
 import { ProductRepository } from '@/modules/product/domain/repositories/product.repository';
 import { AppError, requireRecord } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
-import { RenderProduct, VideoGeneration } from '../../domain/entities/video-generation.entity';
-import { VIDEO_RENDER_PROVIDER, VideoProvider } from '../../domain/providers/video.provider';
+import { RenderBrand, RenderProduct, VideoGeneration } from '../../domain/entities/video-generation.entity';
+import { VideoProvider } from '../../domain/providers/video.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
 // A URL das fotos precisa valer enquanto o render aguarda na fila e executa.
@@ -22,7 +23,7 @@ export class GenerateVideoUseCase {
     private readonly contentRepository: ContentRepository,
     private readonly videoGenerationRepository: VideoGenerationRepository,
     private readonly scriptProvider: ScriptProvider,
-    @Inject(VIDEO_RENDER_PROVIDER) private readonly videoProvider: VideoProvider,
+    private readonly videoProvider: VideoProvider,
     private readonly storageProvider: StorageProvider,
     private readonly requestContext: RequestContext,
     private readonly productRepository: ProductRepository,
@@ -74,17 +75,24 @@ export class GenerateVideoUseCase {
 
     const script = needsScriptWebhook ? '' : (aiScript.trim() && aiScript) || await this.scriptProvider.generate(brief);
     const product = await this.renderProduct(content.fields.productId);
+    const brand = this.renderBrand(references);
     const generation = await this.videoGenerationRepository.create(
-      contentId, content.revision, { script, imageKeys, brief, product }, mode === 'manual', needsScriptWebhook ? 'PENDING_SCRIPT' : 'PENDING',
+      contentId, content.revision, { script, imageKeys, brief, product, brand }, mode === 'manual', needsScriptWebhook ? 'PENDING_SCRIPT' : 'PENDING',
     );
 
     return needsScriptWebhook ? this.submitScript(generation) : this.submit(generation);
   }
 
-  // Dados do produto principal usados por provedores que montam o vídeo a partir do cadastro (Remotion).
+  // Dados do produto principal usados pelo template do anúncio.
   private async renderProduct (productId: string): Promise<RenderProduct> {
     const { name, description, price, oldPrice } = requireRecord(await this.productRepository.findById(productId), 'Produto');
     return { name, description, price, oldPrice };
+  }
+
+  private renderBrand ({ campaign }: ContentReferences): RenderBrand {
+    const brand = requireRecord(campaign?.brand, 'Marca');
+    const { name, primaryColor, secondaryColor, tertiaryColor, quaternaryColor } = brand;
+    return { name, primaryColor, secondaryColor, tertiaryColor, quaternaryColor };
   }
 
   private advance (generation: VideoGeneration) {
@@ -119,9 +127,9 @@ export class GenerateVideoUseCase {
       this.logger.log(`Preparando envio do vídeo ao provedor de render. ${context}`);
       let providerId: string;
       try {
-        const { script, imageKeys, brief, product } = job.input;
+        const { script, imageKeys, brief, product, brand = { name: brief.brand, primaryColor: null, secondaryColor: null } } = job.input;
         const imageUrls = await Promise.all(imageKeys.map(key => this.storageProvider.url(key, IMAGE_URL_TTL_SECONDS)));
-        providerId = await this.videoProvider.render({ submissionId: job.submissionId, script, imageUrls, brand: brief.brand, product });
+        providerId = await this.videoProvider.render({ submissionId: job.submissionId, script, imageUrls, brand, brief, product });
       } catch {
         await this.videoGenerationRepository.fail(job, 'Falha ao solicitar o render. Confirme a configuração e o template.');
         this.logger.warn(`Falha ao solicitar o render ao provedor. ${context}`);

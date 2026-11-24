@@ -14,8 +14,14 @@ export const PRODUCT_AD_DIMENSIONS: Record<ProductAdFormat, { width: number; hei
   '16x9': { width: 1920, height: 1080 },
 };
 
-export const PRODUCT_AD_COMPOSITION = 'ProductAd';
+// Templates do anúncio. Todos recebem as mesmas props (ProductAdProps) e têm a mesma duração e os mesmos formatos.
+// - ProductAd: foto em tela cheia, headline sobre degradê e cenas com a foto desfocada.
+// - ProductAdEditorial: estilo revista, fundo na cor principal, foto em cartão e benefícios numerados.
+// - ProductAdKinetic: tipografia em movimento, cortes rápidos e as cores da marca alternando a cada tela.
+export const PRODUCT_AD_TEMPLATES = ['ProductAd', 'ProductAdEditorial', 'ProductAdKinetic'] as const;
 
-export function productAdCompositionId (format: ProductAdFormat) {
-  return `${PRODUCT_AD_COMPOSITION}-${format}`;
+export type ProductAdTemplate = (typeof PRODUCT_AD_TEMPLATES)[number];
+
+export function productAdCompositionId (format: ProductAdFormat, template: ProductAdTemplate = 'ProductAd') {
+  return `${template}-${format}`;
 }

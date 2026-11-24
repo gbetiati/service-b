@@ -28,6 +28,9 @@ export class PrismaBrandRepository implements BrandRepository {
   }
 
   private toDomain (row: Row) {
-    return new Brand(row.id, row.companyId, row.name, row.createdAt, row.updatedAt);
+    return new Brand(
+      row.id, row.companyId, row.name, row.createdAt, row.updatedAt,
+      row.primaryColor, row.secondaryColor, row.tertiaryColor, row.quaternaryColor, row.voiceTone, row.targetAudience, row.copyGuidelines,
+    );
   }
 }

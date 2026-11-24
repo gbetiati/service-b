@@ -67,20 +67,23 @@ function setup (state = {}, { start = async () => ({ status: 'PENDING' }) } = {}
   };
   const generator = { requestScript: request('script'), requestVideo: request('video') };
   const orchestrator = new PublicationOrchestrator(
-    generator, preparation, { execute: request('transcription') }, { execute: request('subtitles') }, { companyId: 'company' },
+    generator, preparation, { companyId: 'company' },
     { execute: async (...args) => { effects.push(['revise', ...args]); return { revision: 2 }; } },
   );
   return { orchestrator, effects };
 }
 
 test('starting preparation persists the tenant-owned content request and advances the first incomplete stage', async () => {
-  const stages = [
-    ['scriptStatus', 'script'], ['videoStatus', 'video'], ['transcriptionStatus', 'transcription'], ['subtitleStatus', 'subtitles'],
-  ];
-  for (const [field, action] of stages) {
+  for (const [field, action] of [['scriptStatus', 'script'], ['videoStatus', 'video']]) {
     const flow = setup({ ...ready, [field]: 'NOT_STARTED' });
     assert.equal((await flow.orchestrator.start(input.contentId)).status, 'PENDING');
     assert.deepEqual(flow.effects, [['request', input], ['read', input], [action, { ...input, revision: 2 }]]);
+  }
+  // Transcrição e legendas não disparam trabalho: são preenchidas na conclusão do render.
+  for (const field of ['transcriptionStatus', 'subtitleStatus']) {
+    const flow = setup({ ...ready, [field]: 'NOT_STARTED' });
+    assert.equal((await flow.orchestrator.start(input.contentId)).status, 'PENDING');
+    assert.deepEqual(flow.effects, [['request', input], ['read', input]]);
   }
 });
 
@@ -196,7 +199,6 @@ test('a failed video download marks the video stage as failed', async () => {
       fail: async (...args) => failures.push(args),
     },
     { download: async () => { throw new Error('MP4 unavailable'); } },
-    {},
     {},
   );
 

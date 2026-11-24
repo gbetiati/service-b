@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError, requireRecord } from '@/shared/core/errors/app.error';
 import { ContentAsset } from './content-asset.entity';
 import { ContentStatus } from './content-status';
-import type { ScriptBrief } from '../providers/script.provider';
+import type { BrandVoice, ScriptBrief } from '../providers/script.provider';
 
 export const CONTENT_MAX_MEDIA_ASSETS = 5;
 export const CONTENT_MAX_SCRIPT_LENGTH = 12000;
@@ -23,8 +23,19 @@ export type ContentFields = {
 
 export type ContentFieldChanges = Partial<Omit<ContentFields, 'assets'>> & { mediaAssetIds?: string[] };
 
+export type ReferencedBrand = {
+  name: string;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  tertiaryColor: string | null;
+  quaternaryColor: string | null;
+  voiceTone: string | null;
+  targetAudience: string | null;
+  copyGuidelines: string | null;
+};
+
 export type ContentReferences = {
-  campaign: { brandId: string; objective: string | null; brand: { name: string } | null } | null;
+  campaign: { brandId: string; objective: string | null; brand: ReferencedBrand | null } | null;
   rule: { campaingId: string; guidelines: string } | null;
   products: { id: string; brandId: string; name: string; description: string | null }[];
   images: { id: string; productId: string; storageKey: string }[];
@@ -116,6 +127,12 @@ export class Content {
       guidelines: rule.guidelines,
       products: products.map(product => product.description ? product.name + ': ' + product.description : product.name),
       brief: this.fields.editorial.brief,
+      ...brandVoice(brand),
     };
   }
+}
+
+// Campos vazios ficam de fora para não poluir o brief enviado à IA.
+function brandVoice ({ voiceTone, targetAudience, copyGuidelines }: ReferencedBrand): BrandVoice {
+  return { ...(voiceTone && { voiceTone }), ...(targetAudience && { targetAudience }), ...(copyGuidelines && { copyGuidelines }) };
 }

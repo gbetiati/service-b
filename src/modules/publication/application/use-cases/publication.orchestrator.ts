@@ -2,16 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { UpdateContentUseCase } from '@/modules/content/application/use-cases/update-content.usecase';
 import { PreparationStatus } from '@/modules/content/domain/entities/content.entity';
 import { ContentPreparationInput, ContentPreparationRepository } from '@/modules/content/domain/repositories/content-preparation.repository';
-import { BurnVideoSubtitlesUseCase } from '@/modules/video-generation/application/use-cases/burn-video-subtitles.usecase';
 import { GenerateVideoUseCase } from '@/modules/video-generation/application/use-cases/generate-video.usecase';
-import { TranscribeVideoUseCase } from '@/modules/video-generation/application/use-cases/transcribe-video.usecase';
 import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { PublicationPolicy } from '../../domain/entities/publication.policy';
 
-type PreparationStep = { status: PreparationStatus; request: () => Promise<{ status: string }>; failureMessage: string };
+// Etapas sem `request` não disparam trabalho: transcrição e legendas ficam prontas na conclusão do render (vídeo sem fala).
+type PreparationStep = { status: PreparationStatus; request?: () => Promise<{ status: string }>; failureMessage: string };
 
-// Avança a preparação do conteúdo uma etapa por vez (roteiro, vídeo, transcrição e legendas).
+// Avança a preparação do conteúdo uma etapa por vez (roteiro e vídeo; transcrição e legendas só são conferidas).
 // Cada chamada inicia no máximo a próxima etapa pendente; os webhooks e o cron continuam o fluxo.
 @Injectable()
 export class PublicationOrchestrator {
@@ -20,8 +19,6 @@ export class PublicationOrchestrator {
   constructor(
     private readonly generateVideoUseCase: GenerateVideoUseCase,
     private readonly contentPreparationRepository: ContentPreparationRepository,
-    private readonly transcribeVideoUseCase: TranscribeVideoUseCase,
-    private readonly burnVideoSubtitlesUseCase: BurnVideoSubtitlesUseCase,
     private readonly requestContext: RequestContext,
     private readonly updateContentUseCase: UpdateContentUseCase,
   ) {}
@@ -53,8 +50,8 @@ export class PublicationOrchestrator {
     const steps: PreparationStep[] = [
       { status: state.scriptStatus, request: () => this.generateVideoUseCase.requestScript(target), failureMessage: 'Não foi possível gerar o roteiro.' },
       { status: state.videoStatus, request: () => this.generateVideoUseCase.requestVideo(target), failureMessage: 'Não foi possível renderizar o vídeo.' },
-      { status: state.transcriptionStatus, request: () => this.transcribeVideoUseCase.execute(target), failureMessage: 'Não foi possível transcrever o vídeo.' },
-      { status: state.subtitleStatus, request: () => this.burnVideoSubtitlesUseCase.execute(target), failureMessage: 'Não foi possível renderizar as legendas.' },
+      { status: state.transcriptionStatus, failureMessage: 'Não foi possível transcrever o vídeo.' },
+      { status: state.subtitleStatus, failureMessage: 'Não foi possível renderizar as legendas.' },
     ];
 
     const fail = async (error: string) => {
@@ -77,7 +74,7 @@ export class PublicationOrchestrator {
       return { contentId: input.contentId, revision, status: 'READY', videoId: video.id } as const;
     }
 
-    if (next.status === 'NOT_STARTED') {
+    if (next.status === 'NOT_STARTED' && next.request) {
       try {
         if ((await next.request()).status === 'FAILED') return fail(next.failureMessage);
       } catch (error) {
