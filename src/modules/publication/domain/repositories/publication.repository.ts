@@ -1,9 +1,12 @@
 import type { ContentPreparationInput } from '@/modules/content/domain/repositories/content-preparation.repository';
 import { Publication, PublicationWork } from '../entities/publication.entity';
+import type { CreatePublicationScheduleInput } from './content-schedule.repository';
 
 export type PreparedPublicationContent = ContentPreparationInput & { revision: number; videoId: string };
 
 export abstract class PublicationRepository {
+  abstract createScheduled (input: CreatePublicationScheduleInput): Promise<Publication>;
+
   abstract createFromPreparedContent (input: PreparedPublicationContent): Promise<void>;
 
   abstract findById (id: string): Promise<Publication | null>;

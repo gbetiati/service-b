@@ -18,6 +18,11 @@ export class VideoGenerationController {
     return this.generateVideoUseCase.execute(id);
   }
 
+  @Get('contents/:id/video-generations')
+  current (@Param('id', ParseUUIDPipe) id: string) {
+    return this.getVideoGenerationStatusUseCase.executeForContent(id);
+  }
+
   @Get('video-generations/:id')
   status (@Param('id', ParseUUIDPipe) id: string) {
     return this.getVideoGenerationStatusUseCase.execute(id);

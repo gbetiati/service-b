@@ -1,5 +1,6 @@
 import type { ContentStatus } from '@/modules/content/domain/entities/content-status';
 import type { ContentScheduleRepository } from '../../domain/repositories/content-schedule.repository';
+import type { PublicationRepository } from '../../domain/repositories/publication.repository';
 
 export interface PublicationSchedulingSession {
   findContent (id: string): Promise<{ status: ContentStatus; revision: number; editorial: { caption?: string } } | null>;
@@ -9,6 +10,7 @@ export interface PublicationSchedulingSession {
   findSocialAccount (id: string): Promise<{ active: boolean; credentials: { expiresAt: Date | null }[] } | null>;
 
   contentScheduleRepository: Pick<ContentScheduleRepository, 'save'>;
+  publicationRepository: Pick<PublicationRepository, 'createScheduled'>;
 }
 
 export abstract class PublicationSchedulingTransaction {

@@ -18,7 +18,7 @@ export class MediaAssetController {
   @Post('products/:id/media')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0 } }))
   upload (@Param('id', ParseUUIDPipe) id: string, @UploadedFile(new ParseFilePipeBuilder().build()) file: Express.Multer.File) {
-    return this.uploadMediaAssetUseCase.execute(id, file.buffer);
+    return this.uploadMediaAssetUseCase.execute(id, file.buffer, file.mimetype);
   }
 
   @Get('products/:id/media')

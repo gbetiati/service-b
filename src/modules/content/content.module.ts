@@ -19,9 +19,10 @@ import { OpenAiScriptProvider } from './infra/providers/open-ai-script.provider'
   providers: [
     CreateContentUseCase, GetContentDetailsUseCase, GetContentHistoryUseCase, ListContentUseCase, UpdateContentUseCase,
     { provide: ContentPreparationRepository, useClass: PrismaContentPreparationRepository },
-    { provide: ContentRepository, useClass: PrismaContentRepository },
+    PrismaContentRepository,
+    { provide: ContentRepository, useExisting: PrismaContentRepository },
     { provide: ScriptProvider, useClass: OpenAiScriptProvider },
   ],
-  exports: [UpdateContentUseCase, ContentRepository, ContentPreparationRepository, ScriptProvider],
+  exports: [CreateContentUseCase, UpdateContentUseCase, ContentRepository, PrismaContentRepository, ContentPreparationRepository, ScriptProvider],
 })
 export class ContentModule {}

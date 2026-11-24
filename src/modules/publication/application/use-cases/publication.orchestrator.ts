@@ -23,11 +23,14 @@ export class PublicationOrchestrator {
 
   async start(contentId: string, regenerateFromRevision?: number) {
     this.logger.log(`Preparação solicitada para o conteúdo ${contentId}.`);
+
     const input = { companyId: this.requestContext.companyId, contentId };
+
     if (regenerateFromRevision !== undefined) {
       const content = await this.updateContentUseCase.execute(contentId, { revision: regenerateFromRevision }, true);
       return this.execute(input, content.revision);
     }
+
     await this.contentPreparationRepository.request(input);
     return this.execute(input);
   }
@@ -40,7 +43,8 @@ export class PublicationOrchestrator {
       transcriptionStatus,
       subtitleStatus,
       status,
-      video } = await this.contentPreparationRepository.read(input);
+      video
+    } = await this.contentPreparationRepository.read(input);
 
     if (expectedRevision !== undefined && expectedRevision !== revision) {
       throw new AppError('conflict', 'A revisão do conteúdo mudou durante a preparação.');
@@ -73,6 +77,7 @@ export class PublicationOrchestrator {
 
     const fail = async (error: string) => {
       await this.contentPreparationRepository.complete(input, revision);
+
       return { contentId: input.contentId, revision, status: 'FAILED', error } as const;
     };
 
@@ -80,11 +85,14 @@ export class PublicationOrchestrator {
     if (failed) return fail(failed.failureMessage);
 
     const next = steps.find(step => step.status !== 'READY');
+
     if (!next) {
       if (!video || !PublicationPolicy.isApprovedVideo(status, revision, video.reviewStatus, video.revision)) {
         return fail('Use um vídeo aprovado da revisão atual do conteúdo.');
       }
+
       await this.contentPreparationRepository.complete(input, revision);
+      
       return { contentId: input.contentId, revision, status: 'READY', videoId: video.id } as const;
     }
 
@@ -97,6 +105,7 @@ export class PublicationOrchestrator {
         return fail(message);
       }
     }
+    
     return { contentId: input.contentId, revision, status: 'PENDING' } as const;
   }
 }

@@ -12,9 +12,10 @@ export class MediaAsset {
     readonly updatedAt: Date,
   ) {}
 
-  static create (companyId: string, productId: string, bytes: number) {
+  static create (companyId: string, productId: string, bytes: number, contentType: 'image/jpeg' | 'video/mp4' = 'image/jpeg') {
     const id = randomUUID();
     const now = new Date();
-    return new MediaAsset(id, companyId, productId, `${companyId}/products/${productId}/${id}.jpg`, 'image/jpeg', bytes, now, now);
+    const extension = contentType === 'video/mp4' ? 'mp4' : 'jpg';
+    return new MediaAsset(id, companyId, productId, `${companyId}/products/${productId}/${id}.${extension}`, contentType, bytes, now, now);
   }
 }

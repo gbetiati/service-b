@@ -25,18 +25,20 @@ As rotas abaixo usam `Authorization: Bearer <accessToken>`. As rotas de cadastro
 | `POST` e `GET /campaigns` | Cadastra e lista campanhas ligadas a uma marca |
 | `POST` e `GET /campaign-rules` | Cadastra e lista regras de campanhas |
 | `POST` e `GET /products` | Cadastra e lista produtos da empresa |
-| `POST /products/:id/media` | Associa uma imagem JPEG, PNG ou WebP de até 10 MB ao produto. Use multipart com o campo `file` |
-| `GET /products/:id/media` e `GET /media-assets/:id/url` | Lista as imagens de um produto e emite uma URL temporária |
+| `POST /products/:id/media` | Associa uma foto JPEG, PNG ou WebP ou um vídeo MP4 de até 10 MB ao produto. Use multipart com o campo `file`. A validação de MP4 usa o FFprobe |
+| `GET /products/:id/media` e `GET /media-assets/:id/url` | Lista as fotos e os vídeos de um produto e emite uma URL temporária |
 | `POST /contents` | Cria conteúdo com `campaingId`, `campaingRulesId` e `productId`. Aceita `productIds` adicionais, `aiScript`, `mediaAssetIds` e `editorial` |
 | `GET /contents`, `GET /contents/:id` e `GET /contents/:id/history` | Lista conteúdos, detalhes e histórico. As listas aceitam `offset` e `limit` |
 | `PATCH /contents/:id` | Atualiza campos editoriais com a `revision` atual |
 | `POST /contents/:id/video-generations` | Inicia o render assíncrono da revisão atual |
+| `GET /contents/:id/video-generations` | Consulta o render da revisão atual do conteúdo e as URLs do vídeo |
 | `GET /video-generations/:id` | Consulta o render e, quando disponível, a revisão e a URL do vídeo |
 | `POST /social-accounts/instagram/connect` | Gera a URL de autorização do Instagram |
 | `GET /social-accounts/instagram/callback` | Processa o retorno da Meta |
 | `GET /social-accounts` | Lista as contas conectadas |
 | `POST /social-accounts/:id/instagram/refresh` | Renova a credencial do Instagram antes do vencimento |
 | `POST /publications` | Cria um agendamento com `contentId`, `socialAccountId`, `date` ISO 8601 com fuso e `caption` opcional. Aceita `videoId` para usar um vídeo já aprovado da revisão atual |
+| `POST /publications/schedule` | Cria e retorna a publicação agendada. Envie `contentId` ou `contentDraft` com `campaingId`, `campaingRulesId` e `productId`, além de `socialAccountId`, `date` e `caption` opcional. `videoId` é opcional com `contentId` |
 | `POST /publications/contents/:contentId/prepare` | Inicia a preparação pelo conteúdo. Retorna HTTP 202 com `contentId`, `revision` e `status`. Envie `{"regenerateFromRevision":7}` para criar uma revisão a partir da revisão atual 7 e renderizar um novo vídeo com o roteiro existente |
 | `GET /publications/schedules/:id` | Consulta o agendamento, a falha de preparação, quando houver, e o ID da publicação depois que for criada |
 | `POST /webhooks/openai` | Recebe o evento assinado de conclusão ou falha do roteiro |
@@ -61,6 +63,8 @@ Use `SERVICE_BASE_URL` para a URL pública apontada para a API em desenvolviment
 ## Publicação agendada
 
 O endpoint de preparação inicia o fluxo pelo conteúdo, inclusive sem agendamento. O cron continua a execução a cada cinco segundos, conforme os webhooks atualizam as etapas. Um agendamento também ativa automaticamente a preparação cinco minutos antes do horário. O fluxo solicita roteiro, render, transcrição ao Whisper e renderização das legendas pelo FFmpeg. Consulte os status das etapas em `GET /contents/:id` e o MP4 legendado em `video.captionedUrl` na consulta do render.
+
+Quando `POST /publications/schedule` recebe `contentDraft`, o agendamento começa com `contentId: null`. Na janela de preparação, o cron `Content-process` usa até cinco fotos do produto para criar o conteúdo com roteiro. O cron associa o conteúdo ao agendamento e chama o orquestrador após salvar o conteúdo.
 
 `POST /publications` retorna o agendamento com `publication: null` enquanto a preparação estiver em andamento. O orquestrador prepara o conteúdo e informa o resultado. Quando todas as etapas estiverem prontas e o vídeo da revisão atual estiver aprovado, o cron cria a publicação dos agendamentos válidos. Se a preparação falhar ou expirar, consulte `preparationError` no agendamento. Instale uma compilação do FFmpeg com o filtro `subtitles` (libass) e o encoder `libx264`. Use `FFMPEG_BINARY` para indicar o executável usado na etapa de legendas. Se o Whisper retornar um SRT vazio, o fluxo usa o vídeo original.
 

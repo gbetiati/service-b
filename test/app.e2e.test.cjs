@@ -121,7 +121,8 @@ test('company onboarding through content preparation and deferred publication cr
 
           if (url.pathname === '/v1/chat/completions') {
             const { messages } = JSON.parse(request.body);
-            assert.deepEqual(JSON.parse(messages[1].content), expectedScriptBrief);
+            const brief = scripts === 0 ? expectedScriptBrief : { ...expectedScriptBrief, products: ['Produto A'] };
+            assert.deepEqual(JSON.parse(messages[1].content), brief);
             scripts++;
             return { choices: [{ message: { content: 'Roteiro criado pela IA.' } }] };
           }
@@ -386,6 +387,21 @@ test('company onboarding through content preparation and deferred publication cr
     const submission = await poll(() => transcriptionRequests[0], Boolean);
     assert.equal((await get(schedulePath, token)).publication, null);
     assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 0);
+
+    const directDate = new Date(Date.now() + 30 * 60_000).toISOString();
+    const directInput = { contentId: content.id, socialAccountId: account.id, date: directDate };
+    await post('/publications/schedule', other, directInput, 404);
+    await post('/publications/schedule', token, { ...directInput, date: new Date(Date.now() - 60_000).toISOString() }, 400);
+    const direct = await post('/publications/schedule', token, directInput);
+    assert.equal(direct.status, 'SCHEDULED');
+    assert.equal(direct.caption, 'Legenda de catálogo');
+    assert.equal(direct.schedule.date, directDate);
+    assert.equal(direct.schedule.status, 'WAITING');
+    assert.equal(direct.schedule.videoId, null);
+    assert.equal((await get('/publications/' + direct.id, token)).schedule.id, direct.schedule.id);
+    assert.equal((await get('/publications/schedules/' + direct.schedule.id, token)).publication.id, direct.id);
+    await get('/publications/' + direct.id, other, 404);
+
     const transcriptionWebhook = '/webhooks/replicate/transcription?submissionId=' + submission;
     await deliverSignedWebhook(transcriptionWebhook, process.env.REPLICATE_WEBHOOK_SECRET, {
       id: 'whisper-test', status: 'succeeded', output: { transcription: srt },
@@ -399,11 +415,14 @@ test('company onboarding through content preparation and deferred publication cr
     assert.equal(publication.caption, 'Legenda de catálogo');
     assert.equal(publication.schedule.id, schedule.id);
     assert.equal((await get('/contents/' + content.id, token)).subtitleStatus, 'READY');
-    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 1);
+    const directReady = await poll(() => get('/publications/' + direct.id, token), value => value.schedule.status === 'READY');
+    assert.equal(directReady.schedule.videoId, render.video.id);
+    assert.equal(directReady.status, 'SCHEDULED');
+    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 2);
     await post(preparePath, token, undefined, 202);
-    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 1);
+    assert.equal(await db.publication.count({ where: { companyId: a.companyId } }), 2);
     assert.equal(publishes, 0);
-    await db.publication.update({ where: { id: publication.id }, data: { status: 'PUBLISHED' } });
+    await db.publication.updateMany({ where: { id: { in: [publication.id, direct.id] } }, data: { status: 'PUBLISHED' } });
     await patch({ body: { revision: 2, aiScript: 'Nova revisão depois de publicar' } });
     await post('/publications', token, {
       contentId: content.id, videoId: render.video.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
@@ -420,9 +439,15 @@ test('company onboarding through content preparation and deferred publication cr
     const pendingPublication = await post('/publications', token, {
       contentId: content.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
     });
+    const directPending = await post('/publications/schedule', token, {
+      contentId: content.id, socialAccountId: account.id, date: new Date(Date.now() + 60_000).toISOString(),
+    });
     const failedPublication = await poll(
       () => get('/publications/schedules/' + pendingPublication.id, token), value => value.status === 'ERROR',
     );
+    const directFailure = await poll(() => get('/publications/' + directPending.id, token), value => value.status === 'FAILED');
+    assert.equal(directFailure.schedule.status, 'ERROR');
+    assert.match(directFailure.error, /render|vídeo/i);
     assert.match(failedPublication.preparationError, /render|vídeo/i);
     assert.equal(failedPublication.publication, null);
     const videoFailure = await get('/contents/' + content.id, token);
@@ -455,6 +480,49 @@ test('company onboarding through content preparation and deferred publication cr
     assert.equal(scriptFailure.videoStatus, 'NOT_STARTED');
     assert.equal(renders, 2);
     assert.equal(publishes, 0);
+
+    const { PublicationScheduler } = require('../dist/modules/publication/infra/schedule/publication.scheduler');
+    const { SchedulerRegistry } = require('@nestjs/schedule');
+    assert.ok(app.get(SchedulerRegistry).getCronJob('Content-process'));
+    const scheduler = app.get(PublicationScheduler);
+    const draft = { campaingId: campaign.id, campaingRulesId: rules.id, productId: product.id };
+    const draftSchedule = {
+      contentDraft: draft, socialAccountId: account.id, date: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    await post('/publications/schedule', token, { ...draftSchedule, contentId: content.id }, 400);
+    await post('/publications/schedule', token, { ...draftSchedule, contentDraft: { ...draft, campaingRulesId: randomUUID() } }, 400);
+    await post('/publications/schedule', other, draftSchedule, 404);
+    const planned = await post('/publications/schedule', token, draftSchedule);
+    assert.equal(planned.schedule.contentId, null);
+    await scheduler.processContent();
+    assert.equal(scripts, 1);
+
+    failRender = false;
+    await db.contentScheduled.update({
+      where: { id: planned.schedule.id }, data: { date: new Date(Date.now() + 120_000) },
+    });
+    await Promise.all([scheduler.processContent(), scheduler.processContent()]);
+    const linked = await poll(() => get('/publications/' + planned.id, token), value => !!value.schedule.contentId);
+    const generated = await get('/contents/' + linked.schedule.contentId, token);
+    assert.equal(generated.scriptStatus, 'READY');
+    assert.equal(generated.aiScript, 'Roteiro criado pela IA.');
+    assert.equal(generated.productId, product.id);
+    assert.equal(generated.campaingRulesId, rules.id);
+    assert.deepEqual(generated.mediaAssetIds, [asset.id]);
+    await poll(() => db.videoGeneration.findFirst({ where: { contentId: generated.id } }), value => value?.status === 'RENDERING');
+    assert.equal(scripts, 2);
+    assert.equal(renders, 3);
+    assert.equal(await db.content.count({ where: { companyId: a.companyId } }), 2);
+
+    const noPhoto = await post('/publications/schedule', token, {
+      ...draftSchedule, contentDraft: { ...draft, productId: accessory.id }, date: new Date(Date.now() + 120_000).toISOString(),
+    });
+    await scheduler.processContent();
+    const noPhotoResult = await poll(() => get('/publications/' + noPhoto.id, token), value => value.status === 'FAILED');
+    assert.equal(noPhotoResult.schedule.status, 'ERROR');
+    assert.equal(noPhotoResult.schedule.contentId, null);
+    assert.match(noPhotoResult.error, /foto/);
+    assert.equal(scripts, 2);
   } finally {
     if (companies.length) {
       await db.company.deleteMany({ where: { id: { in: companies } } }).finally(() => app.close());

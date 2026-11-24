@@ -19,6 +19,7 @@ model Company {
   products    Product[]
   media       MediaAsset[]
   contents    Content[]
+  schedules   ContentScheduled[]
   accounts    SocialAccount[]
   credentials SocialCredential[]
 
@@ -341,8 +342,9 @@ model SocialCredential {
 model ContentScheduled {
   id          String        @id @default(uuid())
   companyId   String
-  contentId   String
-  content     Content       @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contentId   String?
+  content     Content?      @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
   videoId     String?
   video       VideoAsset?   @relation(fields: [companyId, contentId, videoId], references: [companyId, contentId, id], onDelete: NoAction)
   date        DateTime
@@ -351,12 +353,15 @@ model ContentScheduled {
   socialAccount SocialAccount? @relation(fields: [companyId, socialAccountId], references: [companyId, id], onDelete: NoAction)
   caption String?
   preparationError String?
+  contentDraft Json?
+  contentCreationLeaseUntil DateTime?
   publication Publication?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   @@unique([companyId, id])
   @@index([companyId, date])
+  @@index([contentId, status, date])
   @@map("content_scheduled")
 }
 

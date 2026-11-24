@@ -9,17 +9,24 @@ const videoFields = { id: true, storageKey: true, captionedStorageKey: true, rev
 
 @Injectable()
 export class PrismaContentPreparationRepository implements ContentPreparationRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
-  async request ({ companyId, contentId }: ContentPreparationInput) {
+  async request({ companyId, contentId }: ContentPreparationInput) {
+
     const result = await this.prisma.content.updateMany({
-      where: { companyId, id: contentId },
-      data: { publicationPreparationRequested: true },
+      where: {
+        companyId,
+        id: contentId
+      },
+      data: {
+        publicationPreparationRequested: true
+      },
     });
+
     if (!result.count) throw new AppError('missing', 'Conteúdo não encontrado.');
   }
 
-  async findEligibleContents (limit: number) {
+  async findEligibleContents(limit: number) {
     const rows = await this.prisma.content.findMany({
       where: {
         publicationPreparationRequested: true,
@@ -27,16 +34,29 @@ export class PrismaContentPreparationRepository implements ContentPreparationRep
       },
       orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
       take: limit,
-      select: { id: true, companyId: true, updatedAt: true },
+      select: {
+        id: true,
+        companyId: true,
+        updatedAt: true
+      }
     });
+
     return rows.map(({ id, companyId, updatedAt }) => ({ contentId: id, companyId, updatedAt }));
   }
 
-  read ({ companyId, contentId }: ContentPreparationInput, videoId?: string | null) {
+  read({ companyId, contentId }: ContentPreparationInput, videoId?: string | null) {
     return this.prisma.$transaction(async tx => {
       const content = await tx.content.findUnique({
         where: { companyId_id: { companyId, id: contentId } },
-        select: { revision: true, status: true, scriptStatus: true, videoStatus: true, transcriptionStatus: true, subtitleStatus: true, subtitleLeaseUntil: true },
+        select: {
+          revision: true,
+          status: true,
+          scriptStatus: true,
+          videoStatus: true,
+          transcriptionStatus: true,
+          subtitleStatus: true,
+          subtitleLeaseUntil: true
+        },
       });
       if (!content) throw new AppError('missing', 'Conteúdo não encontrado.');
 
@@ -44,6 +64,7 @@ export class PrismaContentPreparationRepository implements ContentPreparationRep
         where: { companyId_contentId_revision: { companyId, contentId, revision: content.revision } },
         select: { video: { select: videoFields } },
       });
+      
       const video = videoId ? await tx.videoAsset.findUnique({
         where: { companyId_contentId_id: { companyId, contentId, id: videoId } },
         select: videoFields,
@@ -66,7 +87,7 @@ export class PrismaContentPreparationRepository implements ContentPreparationRep
     }, { isolationLevel: 'RepeatableRead' });
   }
 
-  async complete ({ companyId, contentId }: ContentPreparationInput, revision: number) {
+  async complete({ companyId, contentId }: ContentPreparationInput, revision: number) {
     await this.prisma.content.updateMany({
       where: { id: contentId, companyId, revision, publicationPreparationRequested: true },
       data: { publicationPreparationRequested: false },

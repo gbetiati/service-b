@@ -18,7 +18,7 @@ export class PublishScheduledContentUseCase {
     private readonly contentPreparationRepository: ContentPreparationRepository,
   ) { }
 
-  async processScheduled (id: string) {
+  async processScheduled(id: string) {
     const job = await this.publicationRepository.reserveForProcessing(id);
     if (!job) return;
 
@@ -26,23 +26,32 @@ export class PublishScheduledContentUseCase {
     if (!credential || !PublicationPolicy.canPublishWithCredential(accountActive, credential, schedule.date, Date.now())) {
       return this.publicationRepository.markFailed(job, 'A conta precisa ter uma credencial ativa para publicar.');
     }
+
     if (!PublicationPolicy.isWithinGraceWindow(schedule.date, Date.now())) {
       return this.publicationRepository.markFailed(job, 'O prazo da publicação expirou.');
     }
+
+    if (!schedule.contentId) {
+      return this.publicationRepository.markFailed(job, 'O conteúdo da publicação não foi criado.');
+    }
+
     const state = await this.contentPreparationRepository.read({ companyId, contentId: schedule.contentId }, schedule.videoId);
+    
     if ([state.scriptStatus, state.videoStatus, state.transcriptionStatus, state.subtitleStatus].includes('FAILED')) {
       return this.publicationRepository.markFailed(job, 'Falha na preparação do conteúdo.');
     }
+
     if (!state.video || !PublicationPolicy.isApprovedVideo(state.status, state.revision, state.video.reviewStatus, state.video.revision)) {
       return this.publicationRepository.markFailed(job, 'Use um vídeo aprovado da revisão atual do conteúdo.');
     }
+
     if (!schedule.videoId) await this.publicationRepository.attachApprovedVideo(job, state.video.id);
 
     // O envio ao Instagram permanece desativado.
     return this.publicationRepository.releaseProcessing(job);
   }
 
-  async execute (job: PublicationWork, videoKey: string, credential: EncryptedToken) {
+  async execute(job: PublicationWork, videoKey: string, credential: EncryptedToken) {
     const date = job.schedule.date;
 
     if (Date.now() < date.getTime()) return this.publicationRepository.releaseProcessing(job);

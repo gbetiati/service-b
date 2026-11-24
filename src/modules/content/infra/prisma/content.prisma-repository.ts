@@ -22,12 +22,14 @@ export class PrismaContentRepository implements ContentRepository {
   ) {}
 
   create (content: Content) {
+    return this.prismaService.$transaction(tx => this.createInTransaction(content, tx));
+  }
+
+  async createInTransaction (content: Content, tx: Prisma.TransactionClient) {
     const { id } = content;
     const companyId = this.requestContext.companyId;
-    return this.prismaService.$transaction(async tx => {
-      await tx.content.create({ data: { id, companyId, ...this.fields(content), ...this.relations(content) } });
-      return this.saveSnapshot(tx, id, companyId);
-    });
+    await tx.content.create({ data: { id, companyId, ...this.fields(content), ...this.relations(content) } });
+    return this.saveSnapshot(tx, id, companyId);
   }
 
   update (content: Content, publicationPreparationRequested = false) {
@@ -89,7 +91,7 @@ export class PrismaContentRepository implements ContentRepository {
         select: { id: true, brandId: true, name: true, description: true },
       }),
       this.prismaService.mediaAsset.findMany({
-        where: { companyId, id: { in: assets.map(asset => asset.mediaAssetId) } },
+        where: { companyId, id: { in: assets.map(asset => asset.mediaAssetId) }, contentType: { startsWith: 'image/' } },
         select: { id: true, productId: true, storageKey: true },
       }),
     ]);

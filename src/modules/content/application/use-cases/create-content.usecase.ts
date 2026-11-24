@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { ContentAsset } from '../../domain/entities/content-asset.entity';
 import { Content } from '../../domain/entities/content.entity';
@@ -14,7 +15,23 @@ export class CreateContentUseCase {
     private readonly scriptProvider: ScriptProvider,
   ) { }
 
-  async execute(dto: CreateContentDto) {
+  async execute (dto: CreateContentDto) {
+    return this.contentRepository.create(await this.prepare(dto));
+  }
+
+  async validateReferences (dto: CreateContentDto) {
+    await this.build(dto);
+  }
+
+  async prepare (dto: CreateContentDto) {
+    const { content, brief } = await this.build(dto);
+    const script = dto.aiScript ?? await this.scriptProvider.generate(brief);
+    if (!script.trim()) throw new AppError('invalid', 'O roteiro do conteúdo precisa ter texto.');
+    content.fields.aiScript = script;
+    return content;
+  }
+
+  private async build (dto: CreateContentDto) {
     const content = Content.create(
       this.requestContext.companyId, {
       campaingId: dto.campaingId,
@@ -28,8 +45,6 @@ export class CreateContentUseCase {
 
     const brief = content.buildScriptBrief(await this.contentRepository.findReferences(content));
 
-    content.fields.aiScript = dto.aiScript ?? await this.scriptProvider.generate(brief);
-
-    return this.contentRepository.create(content);
+    return { content, brief };
   }
 }

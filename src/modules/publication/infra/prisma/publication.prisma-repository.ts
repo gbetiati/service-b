@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ContentStatus } from '@/modules/content/domain/entities/content-status';
 import { RequestContext } from '@/shared/core/request-context/request-context';
+import { requireRecord } from '@/shared/core/errors/app.error';
+import type { CreatePublicationScheduleInput } from '../../domain/repositories/content-schedule.repository';
 import { ContentScheduled } from '../../domain/entities/content-scheduled.entity';
 import { Publication, PublicationWork } from '../../domain/entities/publication.entity';
 import { CLAIM_LEASE_MS, PUBLICATION_CRON_BATCH_SIZE, PUBLICATION_GRACE_MS } from '../../domain/entities/publication-timing';
@@ -23,6 +25,17 @@ export class PrismaPublicationRepository implements PublicationRepository {
     private readonly requestContext: RequestContext,
   ) { }
 
+  async createScheduled (input: CreatePublicationScheduleInput, client: Prisma.TransactionClient = this.prismaService) {
+    const { publication } = await client.contentScheduled.create({
+      data: {
+        ...input,
+        publication: { create: { socialAccountId: input.socialAccountId, caption: input.caption } },
+      },
+      select: { publication: { include } },
+    });
+    return this.toDomain(requireRecord(publication, 'Publicação'));
+  }
+
   async createFromPreparedContent ({ companyId, contentId, revision, videoId }: PreparedPublicationContent) {
     await this.prismaService.serializable(async tx => {
       const video = await tx.videoAsset.findFirst({
@@ -42,17 +55,21 @@ export class PrismaPublicationRepository implements PublicationRepository {
         if (!schedule.socialAccountId) continue;
         const where = { companyId_id: { companyId, id: schedule.id } };
         if (schedule.videoId && schedule.videoId !== video.id) {
-          await tx.contentScheduled.update({
-            where,
-            data: { status: 'ERROR', preparationError: 'Use um vídeo aprovado da revisão atual do conteúdo.' },
+          const error = 'Use um vídeo aprovado da revisão atual do conteúdo.';
+          await tx.publication.updateMany({
+            where: { companyId, scheduleId: schedule.id, status: 'SCHEDULED' },
+            data: { status: 'FAILED', error },
           });
+          await tx.contentScheduled.update({ where, data: { status: 'ERROR', preparationError: error } });
           continue;
         }
         await tx.contentScheduled.update({
           where,
           data: {
             status: 'READY', videoId: video.id,
-            publication: { create: { socialAccountId: schedule.socialAccountId, caption: schedule.caption } },
+            publication: {
+              upsert: { create: { socialAccountId: schedule.socialAccountId, caption: schedule.caption }, update: {} },
+            },
           },
         });
       }
@@ -146,6 +163,7 @@ export class PrismaPublicationRepository implements PublicationRepository {
       status: statuses,
       OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
       schedule: {
+        NOT: pendingSchedule,
         date: { lte: now },
         OR: [
           { content: preparationReady },

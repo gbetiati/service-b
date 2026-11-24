@@ -3,12 +3,14 @@ import { ContentStatus } from '@/modules/content/domain/entities/content-status'
 import { PrismaService } from '@/prisma/prisma.service';
 import { PublicationSchedulingSession, PublicationSchedulingTransaction } from '../../application/ports/publication-scheduling-transaction';
 import { PrismaContentScheduleRepository } from './prisma-content-schedule-repository';
+import { PrismaPublicationRepository } from './publication.prisma-repository';
 
 @Injectable()
 export class PrismaPublicationSchedulingTransaction implements PublicationSchedulingTransaction {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly prismaContentScheduleRepository: PrismaContentScheduleRepository,
+    private readonly prismaPublicationRepository: PrismaPublicationRepository,
   ) {}
 
   run<T> (companyId: string, work: (session: PublicationSchedulingSession) => Promise<T>) {
@@ -44,6 +46,9 @@ export class PrismaPublicationSchedulingTransaction implements PublicationSchedu
 
       contentScheduleRepository: {
         save: input => this.prismaContentScheduleRepository.save(input, tx),
+      },
+      publicationRepository: {
+        createScheduled: input => this.prismaPublicationRepository.createScheduled(input, tx),
       },
     }));
   }

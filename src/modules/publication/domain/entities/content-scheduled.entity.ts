@@ -14,7 +14,7 @@ export class ContentScheduled {
   constructor(
     readonly id: string,
     readonly companyId: string,
-    readonly contentId: string,
+    readonly contentId: string | null,
     readonly videoId: string | null,
     readonly date: Date,
     readonly status: ContentStatus,
