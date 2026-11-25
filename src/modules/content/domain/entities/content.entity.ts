@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError, requireRecord } from '@/shared/core/errors/app.error';
 import { ContentAsset } from './content-asset.entity';
 import { ContentStatus } from './content-status';
-import type { BrandVoice, ScriptBrief } from '../providers/script.provider';
+import type { BrandVoice, ScriptContext } from '../providers/script.provider';
 
 export const CONTENT_MAX_MEDIA_ASSETS = 5;
 export const CONTENT_MAX_SCRIPT_LENGTH = 12000;
@@ -11,6 +11,19 @@ export type PreparationStatus = 'NOT_STARTED' | 'PENDING' | 'READY' | 'FAILED';
 
 export type Editorial = { brief?: string; caption?: string; tags?: string[] };
 
+// Áudio do anúncio: música de fundo e locução do roteiro por voz sintetizada. Sem nenhuma, o vídeo sai mudo.
+export type ContentAudio = { backgroundMusic: boolean; voiceover: boolean };
+
+export const SILENT_AUDIO: ContentAudio = { backgroundMusic: false, voiceover: false };
+
+// Aplica as opções enviadas sobre as atuais; as omitidas (undefined) ficam como estão.
+export function mergeAudio (current: ContentAudio, changes: Partial<ContentAudio> = {}): ContentAudio {
+  return {
+    backgroundMusic: changes.backgroundMusic ?? current.backgroundMusic,
+    voiceover: changes.voiceover ?? current.voiceover,
+  };
+}
+
 export type ContentFields = {
   campaingId: string;
   campaingRulesId: string;
@@ -18,10 +31,11 @@ export type ContentFields = {
   productIds: string[];
   aiScript: string;
   editorial: Editorial;
+  audio: ContentAudio;
   assets: ContentAsset[];
 };
 
-export type ContentFieldChanges = Partial<Omit<ContentFields, 'assets'>> & { mediaAssetIds?: string[] };
+export type ContentFieldChanges = Partial<Omit<ContentFields, 'assets' | 'audio'>> & { audio?: Partial<ContentAudio>; mediaAssetIds?: string[] };
 
 export type ReferencedBrand = {
   name: string;
@@ -82,6 +96,7 @@ export class Content {
       campaingId: changes.campaingId ?? fields.campaingId, campaingRulesId: changes.campaingRulesId ?? fields.campaingRulesId,
       productId: changes.productId ?? fields.productId, productIds: changes.productIds ?? fields.productIds,
       aiScript: changes.aiScript ?? fields.aiScript, editorial: changes.editorial ?? fields.editorial,
+      audio: mergeAudio(fields.audio, changes.audio),
       assets: mediaAssetIds ? ContentAsset.fromMediaAssetIds(mediaAssetIds) : fields.assets,
     });
   }
@@ -119,7 +134,7 @@ export class Content {
     return { brand: requireRecord(brand, 'Marca'), objective, rule, products: orderedProducts };
   }
 
-  buildScriptBrief (references: ContentReferences): ScriptBrief {
+  buildScriptContext (references: ContentReferences): ScriptContext {
     const { brand, objective, rule, products } = this.validateReferences(references);
     return {
       brand: brand.name,
@@ -132,7 +147,7 @@ export class Content {
   }
 }
 
-// Campos vazios ficam de fora para não poluir o brief enviado à IA.
+// Campos vazios ficam de fora para não poluir o contexto enviado à IA.
 function brandVoice ({ voiceTone, targetAudience, copyGuidelines }: ReferencedBrand): BrandVoice {
   return { ...(voiceTone && { voiceTone }), ...(targetAudience && { targetAudience }), ...(copyGuidelines && { copyGuidelines }) };
 }

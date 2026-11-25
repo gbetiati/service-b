@@ -11,7 +11,8 @@ import { RenderResult } from '../../domain/providers/video.provider';
 import { VideoGenerationRepository } from '../../domain/repositories/video-generation.repository';
 
 // Vídeo sem fala não tem o que transcrever: transcrição e legendas ficam prontas sem texto e o vídeo original é publicado.
-const silentVideoPreparation = { transcriptionStatus: 'READY', transcription: '', subtitleSrt: '', subtitleStatus: 'READY' } as const;
+// Vídeo sem etapa de transcrição: o texto falado, quando conhecido, vira a transcrição. As legendas ficam de fora.
+const skippedSpeechSteps = (transcript = '') => ({ transcriptionStatus: 'READY', transcription: transcript, subtitleSrt: '', subtitleStatus: 'READY' } as const);
 
 @Injectable()
 export class PrismaVideoGenerationRepository implements VideoGenerationRepository {
@@ -187,7 +188,12 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
     });
   }
 
-  async complete (job: VideoGeneration, video: VideoAsset, narrated = true) {
+  async nextVideoFileNumber () {
+    const [{ value }] = await this.prismaService.$queryRaw<{ value: bigint }[]>`SELECT nextval('video_file_number_seq') AS value`;
+    return Number(value);
+  }
+
+  async complete (job: VideoGeneration, video: VideoAsset, narrated = true, transcript?: string) {
     await this.prismaService.$transaction(async tx => {
       const changed = await tx.videoGeneration.updateMany({ where: this.owned(job), data: { status: 'READY', leaseUntil: null } });
 
@@ -196,7 +202,7 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
       const { review, ...data } = video;
       await tx.videoAsset.create({ data: { ...data, reviewStatus: review.status, review } });
       await tx.content.updateMany({
-        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: review.status === 'APPROVED' ? 'READY' : 'REPROVED', videoStatus: 'READY', ...(!narrated && silentVideoPreparation) },
+        where: { companyId: job.companyId, id: job.contentId, revision: job.revision }, data: { status: review.status === 'APPROVED' ? 'READY' : 'REPROVED', videoStatus: 'READY', ...(!narrated && skippedSpeechSteps(transcript)) },
       });
     });
   }
@@ -206,10 +212,16 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
   }
 
   private toDomain (row: Row): VideoGeneration {
-    return { ...row, input: row.input as RenderInput };
+    return { ...row, input: renderInput(row.input) };
   }
 
   private toAsset (row: AssetRow) {
     return new VideoAsset(row.id, row.companyId, row.contentId, row.generationId, row.revision, row.storageKey, row.review as VideoReview);
   }
+}
+
+// Gerações salvas antes da renomeação guardaram o contexto do roteiro na chave `brief`.
+export function renderInput (stored: unknown): RenderInput {
+  const { brief, ...input } = stored as RenderInput & { brief?: RenderInput['context'] };
+  return { ...input, context: input.context ?? brief! };
 }

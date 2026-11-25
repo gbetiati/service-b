@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { ContentAsset } from '../../domain/entities/content-asset.entity';
-import { Content } from '../../domain/entities/content.entity';
+import { Content, SILENT_AUDIO, mergeAudio } from '../../domain/entities/content.entity';
 import { ScriptProvider } from '../../domain/providers/script.provider';
 import { ContentRepository } from '../../domain/repositories/content.repository';
 import { CreateContentDto } from '../dto/create-content.dto';
@@ -26,8 +26,8 @@ export class CreateContentUseCase {
 
   // Monta o conteúdo com roteiro, gerando-o pela IA quando não foi informado. Não persiste.
   async prepare (dto: CreateContentDto) {
-    const { content, brief } = await this.build(dto);
-    const script = dto.aiScript ?? await this.scriptProvider.generate(brief);
+    const { content, context } = await this.build(dto);
+    const script = dto.aiScript ?? await this.scriptProvider.generate(context);
 
     if (!script.trim()) throw new AppError('invalid', 'O roteiro do conteúdo precisa ter texto.');
 
@@ -39,9 +39,10 @@ export class CreateContentUseCase {
     const content = Content.create(this.requestContext.companyId, {
       campaingId: dto.campaingId, campaingRulesId: dto.campaingRulesId, productId: dto.productId,
       productIds: dto.productIds ?? [], aiScript: dto.aiScript ?? '', editorial: dto.editorial ?? {},
+      audio: mergeAudio(SILENT_AUDIO, dto.audio),
       assets: ContentAsset.fromMediaAssetIds(dto.mediaAssetIds ?? []),
     });
-    const brief = content.buildScriptBrief(await this.contentRepository.findReferences(content));
-    return { content, brief };
+    const context = content.buildScriptContext(await this.contentRepository.findReferences(content));
+    return { content, context };
   }
 }

@@ -204,6 +204,9 @@ model Content {
   publicationPreparationRequested Boolean @default(false)
   status                    ContentStatus                @default(WAITING)
   editorial                 Json                         @default("{}")
+  // Áudio do anúncio: música de fundo e locução (TTS) do roteiro.
+  backgroundMusic           Boolean                      @default(false)
+  voiceover                 Boolean                      @default(false)
   embedding                 Unsupported("vector(1536)")?
   revision                  Int                          @default(1)
   createdAt                 DateTime                     @default(now())

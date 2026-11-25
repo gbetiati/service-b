@@ -117,8 +117,8 @@ export class PrismaContentRepository implements ContentRepository {
   }
 
   private fields (content: Content) {
-    const { aiScript, editorial, campaingId, campaingRulesId, productId } = content.fields;
-    return { aiScript, editorial, campaingId, campaingRulesId, productId, scriptStatus: Content.scriptStatusFor(aiScript) };
+    const { aiScript, editorial, audio, campaingId, campaingRulesId, productId } = content.fields;
+    return { aiScript, editorial, ...audio, campaingId, campaingRulesId, productId, scriptStatus: Content.scriptStatusFor(aiScript) };
   }
 
   private relations (content: Content) {
@@ -137,9 +137,9 @@ export class PrismaContentRepository implements ContentRepository {
   }
 
   private toDomain (row: Row) {
-    const { id, companyId, campaingId, campaingRulesId, productId, aiScript, editorial, status, revision, createdAt, updatedAt } = row;
+    const { id, companyId, campaingId, campaingRulesId, productId, aiScript, editorial, backgroundMusic, voiceover, status, revision, createdAt, updatedAt } = row;
     return new Content(id, companyId, {
-      campaingId, campaingRulesId, productId, aiScript, editorial: editorial as Editorial,
+      campaingId, campaingRulesId, productId, aiScript, editorial: editorial as Editorial, audio: { backgroundMusic, voiceover },
       assets: row.assets.map(asset => new ContentAsset(asset.position, asset.mediaAssetId)),
       productIds: row.products.map(product => product.productId),
     }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus, row.transcriptionStatus, row.transcription, row.subtitleStatus);

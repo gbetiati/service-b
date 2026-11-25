@@ -1,18 +1,23 @@
 import React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, optionalColor, readableOn, safeColor, useEnter, useLayout } from './shared';
+import { FONT_FAMILY, benefitGap, optionalColor, readableOn, safeColor, useEnter, useLayout } from './shared';
+import { AdAudio, AudioCues } from './audio';
 
 // Estilo revista: fundo na cor principal, foto em cartão, texto revelado palavra por palavra.
-// Linha do tempo (30 fps, 360 frames = 12 s).
-const SCENES = { intro: [0, 120], benefits: [120, 105], price: [225, 60], cta: [285, 75] } as const;
+// Linha do tempo (30 fps, 450 frames = 15 s). Os benefícios entram espaçados, no ritmo da locução.
+const SCENES = { intro: [0, 120], benefits: [120, 180], price: [300, 60], cta: [360, 90] } as const;
+const bulletGap = (count: number) => benefitGap(count, SCENES.benefits[1] - 40, 55);
+// Frames em que gancho, benefícios e chamada aparecem, para a locução acompanhar o texto.
+const audioCues = (bullets: number): AudioCues => ({ hook: 14, benefits: Array.from({ length: bullets }, (_, index) => SCENES.benefits[0] + 10 + index * bulletGap(bullets)), cta: SCENES.cta[0] });
 
-export const ProductAdEditorial: React.FC<ProductAdProps> = ({ copy, product, brand }) => {
+export const ProductAdEditorial: React.FC<ProductAdProps> = ({ copy, product, brand, audio }) => {
   const color = safeColor(brand.primaryColor);
   const accent = optionalColor(brand.secondaryColor) ?? readableOn(color);
 
   return (
     <AbsoluteFill style={{ backgroundColor: color, color: readableOn(color), fontFamily: `${FONT_FAMILY}, sans-serif` }}>
+      <AdAudio audio={audio} cues={audioCues(copy.bullets.length)} />
       <Sequence from={SCENES.intro[0]} durationInFrames={SCENES.intro[1]} name="Intro">
         <IntroScene imageUrl={product.imageUrl} name={product.name} headline={copy.headline} color={color} accent={accent} />
       </Sequence>
@@ -87,8 +92,8 @@ const BenefitsScene: React.FC<{ imageUrl: string; bullets: string[]; color: stri
   const { fps, width, height } = useVideoConfig();
   const { unit, landscape } = useLayout();
   const card = useEnter(0);
-  const exit = interpolate(frame, [92, 105], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const line = interpolate(frame, [0, 100], [0, 1], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
+  const exit = interpolate(frame, [SCENES.benefits[1] - 13, SCENES.benefits[1]], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const line = interpolate(frame, [0, SCENES.benefits[1] - 5], [0, 1], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
   const { portrait } = useLayout();
   const cardSize = landscape ? height * 0.6 : width * (portrait ? 0.42 : 0.26);
 
@@ -97,7 +102,7 @@ const BenefitsScene: React.FC<{ imageUrl: string; bullets: string[]; color: stri
       <PhotoCard imageUrl={imageUrl} width={cardSize} height={cardSize} zoom={1.05} style={{ opacity: card, transform: `scale(${0.85 + 0.15 * card})`, flexShrink: 0 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 34 * unit, width: landscape ? undefined : '100%', flex: landscape ? 1 : undefined }}>
         {bullets.map((bullet, index) => {
-          const progress = spring({ frame: frame - 10 - index * 12, fps, config: { damping: 200 } });
+          const progress = spring({ frame: frame - 10 - index * bulletGap(bullets.length), fps, config: { damping: 200 } });
           return (
             <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 28 * unit, opacity: progress, transform: `translateY(${(1 - progress) * 40 * unit}px)` }}>
               <div style={{ width: 76 * unit, height: 76 * unit, borderRadius: '50%', backgroundColor: accent, color: readableOn(accent), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 * unit, fontWeight: 800, flexShrink: 0 }}>

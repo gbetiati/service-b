@@ -2,18 +2,22 @@ import React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
 import { FONT_FAMILY, ProductImage, optionalColor, readableOn, safeColor, useEnter, useLayout } from './shared';
+import { AdAudio, AudioCues } from './audio';
 
 // Tipografia em movimento: palavras grandes, cortes rápidos e as cores da marca alternando a cada tela.
-// Linha do tempo (30 fps, 360 frames = 12 s).
-const SCENES = { headline: [0, 90], reveal: [90, 60], benefits: [150, 105], price: [255, 45], cta: [300, 60] } as const;
+// Linha do tempo (30 fps, 450 frames = 15 s). Cada benefício fica uma tela inteira, no ritmo da locução.
+const SCENES = { headline: [0, 90], reveal: [90, 60], benefits: [150, 180], price: [330, 45], cta: [375, 75] } as const;
+// Frames em que gancho, benefícios e chamada aparecem, para a locução acompanhar o texto.
+const audioCues = (bullets: number): AudioCues => ({ hook: 0, benefits: Array.from({ length: bullets }, (_, index) => SCENES.benefits[0] + index * Math.floor(SCENES.benefits[1] / bullets)), cta: SCENES.cta[0] });
 
-export const ProductAdKinetic: React.FC<ProductAdProps> = ({ copy, product, brand }) => {
+export const ProductAdKinetic: React.FC<ProductAdProps> = ({ copy, product, brand, audio }) => {
   const color = safeColor(brand.primaryColor);
   // Sem cor de apoio, alterna a principal com um fundo escuro neutro.
   const accent = optionalColor(brand.secondaryColor) ?? '#111111';
 
   return (
     <AbsoluteFill style={{ backgroundColor: color, fontFamily: `${FONT_FAMILY}, sans-serif` }}>
+      <AdAudio audio={audio} cues={audioCues(copy.bullets.length)} />
       <Sequence from={SCENES.headline[0]} durationInFrames={SCENES.headline[1]} name="Headline">
         <HeadlineScene headline={copy.headline} color={color} />
       </Sequence>

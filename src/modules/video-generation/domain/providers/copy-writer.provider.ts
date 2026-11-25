@@ -3,7 +3,7 @@ import type { ProductAdCopy } from '../entities/product-ad';
 import type { BrandVoice } from '@/modules/content/domain/providers/script.provider';
 
 // `script` é o roteiro do conteúdo, quando existe: a copy deve condensá-lo.
-export type CopyBrief = BrandVoice & {
+export type CopyContext = BrandVoice & {
   name: string;
   description: string | null;
   brand: string | null;
@@ -12,5 +12,5 @@ export type CopyBrief = BrandVoice & {
 };
 
 export abstract class CopyWriterProvider {
-  abstract write (brief: CopyBrief): Promise<ProductAdCopy>;
+  abstract write (context: CopyContext): Promise<ProductAdCopy>;
 }

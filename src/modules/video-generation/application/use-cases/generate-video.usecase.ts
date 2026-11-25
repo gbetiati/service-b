@@ -66,18 +66,18 @@ export class GenerateVideoUseCase {
     if (!assets.length) throw new AppError('invalid', 'Associe ao menos uma foto real do produto ao conteúdo.');
 
     const references = await this.contentRepository.findReferences(content);
-    const brief = content.buildScriptBrief(references);
+    const context = content.buildScriptContext(references);
 
     const imageKeys = assets.map(asset =>
       requireRecord(references.images.find(image => image.id === asset.mediaAssetId), 'Imagem').storageKey);
 
     const needsScriptWebhook = mode === 'script';
 
-    const script = needsScriptWebhook ? '' : (aiScript.trim() && aiScript) || await this.scriptProvider.generate(brief);
+    const script = needsScriptWebhook ? '' : (aiScript.trim() && aiScript) || await this.scriptProvider.generate(context);
     const product = await this.renderProduct(content.fields.productId);
     const brand = this.renderBrand(references);
     const generation = await this.videoGenerationRepository.create(
-      contentId, content.revision, { script, imageKeys, brief, product, brand }, mode === 'manual', needsScriptWebhook ? 'PENDING_SCRIPT' : 'PENDING',
+      contentId, content.revision, { script, imageKeys, context, product, brand, audio: content.fields.audio }, mode === 'manual', needsScriptWebhook ? 'PENDING_SCRIPT' : 'PENDING',
     );
 
     return needsScriptWebhook ? this.submitScript(generation) : this.submit(generation);
@@ -107,7 +107,7 @@ export class GenerateVideoUseCase {
     if (!job) return this.readSubmissionResult(generation);
 
     try {
-      await this.scriptProvider.request(job.input.brief, job.scriptSubmissionId);
+      await this.scriptProvider.request(job.input.context, job.scriptSubmissionId);
     } catch {
       await this.videoGenerationRepository.fail(job, 'Falha ao solicitar roteiro.', 'script');
       return this.readSubmissionResult(job);
@@ -127,9 +127,9 @@ export class GenerateVideoUseCase {
       this.logger.log(`Preparando envio do vídeo ao provedor de render. ${context}`);
       let providerId: string;
       try {
-        const { script, imageKeys, brief, product, brand = { name: brief.brand, primaryColor: null, secondaryColor: null } } = job.input;
+        const { script, imageKeys, context, product, audio, brand = { name: context.brand, primaryColor: null, secondaryColor: null } } = job.input;
         const imageUrls = await Promise.all(imageKeys.map(key => this.storageProvider.url(key, IMAGE_URL_TTL_SECONDS)));
-        providerId = await this.videoProvider.render({ submissionId: job.submissionId, script, imageUrls, brand, brief, product });
+        providerId = await this.videoProvider.render({ submissionId: job.submissionId, script, imageUrls, brand, context, product, audio });
       } catch {
         await this.videoGenerationRepository.fail(job, 'Falha ao solicitar o render. Confirme a configuração e o template.');
         this.logger.warn(`Falha ao solicitar o render ao provedor. ${context}`);

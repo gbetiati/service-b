@@ -94,7 +94,7 @@ test('company onboarding through content preparation and deferred publication cr
         const chunks = [];
         for await (const chunk of video) chunks.push(chunk);
         assert.equal(Buffer.concat(chunks).toString(), 'test mp4');
-        assert.equal(render.brief.brand, 'Marca A');
+        assert.equal(render.context.brand, 'Marca A');
         assert.equal(references.length, 1);
         return { status: 'APPROVED', reason: 'Produtos conferem.', ocr: [] };
       },

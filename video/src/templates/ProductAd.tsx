@@ -1,18 +1,23 @@
 import React from 'react';
 import { AbsoluteFill, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, ProductImage, isHex, readableOn, safeColor, useEnter, useLayout } from './shared';
+import { FONT_FAMILY, ProductImage, benefitGap, isHex, readableOn, safeColor, useEnter, useLayout } from './shared';
+import { AdAudio, AudioCues } from './audio';
 
-// Linha do tempo (30 fps, 360 frames = 12 s).
-const SCENES = { intro: [0, 105], bullets: [105, 105], price: [210, 75], cta: [285, 75] } as const;
+// Linha do tempo (30 fps, 450 frames = 15 s). Os benefícios entram espaçados, no ritmo da locução.
+const SCENES = { intro: [0, 105], bullets: [105, 180], price: [285, 75], cta: [360, 90] } as const;
+const bulletGap = (count: number) => benefitGap(count, SCENES.bullets[1] - 40, 60);
+// Frames em que gancho, benefícios e chamada aparecem, para a locução acompanhar o texto.
+const audioCues = (bullets: number): AudioCues => ({ hook: 10, benefits: Array.from({ length: bullets }, (_, index) => SCENES.bullets[0] + 8 + index * bulletGap(bullets)), cta: SCENES.cta[0] });
 
-export const ProductAd: React.FC<ProductAdProps> = ({ copy, product, brand }) => {
+export const ProductAd: React.FC<ProductAdProps> = ({ copy, product, brand, audio }) => {
   const color = safeColor(brand.primaryColor);
   // Cor de apoio opcional. Só é usada sobre fundos que o template controla, com texto em cor de contraste.
   const secondary = brand.secondaryColor && isHex(brand.secondaryColor) ? brand.secondaryColor : undefined;
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#0b0b0f', fontFamily: `${FONT_FAMILY}, sans-serif`, color: '#fff' }}>
+      <AdAudio audio={audio} cues={audioCues(copy.bullets.length)} />
       <Sequence from={SCENES.intro[0]} durationInFrames={SCENES.intro[1]} name="Intro">
         <IntroScene imageUrl={product.imageUrl} name={product.name} headline={copy.headline} color={color} />
       </Sequence>
@@ -57,14 +62,14 @@ const BulletsScene: React.FC<{ imageUrl: string; bullets: string[]; color: strin
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const { unit, landscape } = useLayout();
-  const zoom = interpolate(frame, [0, 105], [1.12, 1.2], { extrapolateRight: 'clamp' });
+  const zoom = interpolate(frame, [0, SCENES.bullets[1]], [1.12, 1.2], { extrapolateRight: 'clamp' });
 
   return (
     <AbsoluteFill>
       <ProductImage imageUrl={imageUrl} zoom={zoom} dim={0.6} blur={8 * unit} />
       <AbsoluteFill style={{ justifyContent: 'center', padding: 90 * unit, gap: 36 * unit, alignItems: landscape ? 'flex-start' : 'stretch' }}>
         {bullets.map((bullet, index) => {
-          const progress = spring({ frame: frame - 8 - index * 14, fps, config: { damping: 200 } });
+          const progress = spring({ frame: frame - 8 - index * bulletGap(bullets.length), fps, config: { damping: 200 } });
           return (
             <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 28 * unit, opacity: progress, transform: `translateX(${(1 - progress) * -80 * unit}px)` }}>
               <div style={{ width: 22 * unit, height: 22 * unit, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />

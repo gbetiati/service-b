@@ -37,8 +37,9 @@ export class CompleteVideoGenerationUseCase {
         this.logger.warn(`Render rejeitado pelo provedor. ${context}`);
       } else {
         const { companyId, contentId, id, revision } = generation;
-        const key = VideoAsset.storageKeyFor(companyId, contentId, id);
+        let key: string;
         try {
+          key = VideoAsset.storageKeyFor(companyId, contentId, id, { number: await this.videoGenerationRepository.nextVideoFileNumber(), template: outcome.template });
           await this.storageProvider.put(key, await download(outcome.url), 'video/mp4');
         } catch {
           await this.videoGenerationRepository.fail(generation, 'Falha ao baixar ou salvar o vídeo.');
@@ -49,7 +50,7 @@ export class CompleteVideoGenerationUseCase {
         this.logger.log(`MP4 salvo no storage. ${context}`);
         // Sem revisão automática: todo vídeo concluído é aprovado.
         const review = VideoAsset.skippedReview();
-        await this.videoGenerationRepository.complete(generation, new VideoAsset(id, companyId, contentId, id, revision, key, review), outcome.narrated ?? true);
+        await this.videoGenerationRepository.complete(generation, new VideoAsset(id, companyId, contentId, id, revision, key, review), outcome.narrated ?? true, outcome.transcript);
         this.logger.log(`Processamento do render concluído. ${context} revisão=${review.status}`);
       }
 

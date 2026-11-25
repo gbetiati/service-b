@@ -14,6 +14,22 @@ export function formatAdScript ({ hook, benefits, callToAction }: AdScript) {
   return [`${labels.hook} ${hook}`, labels.benefits, ...benefits.map(benefit => `- ${benefit}`), `${labels.callToAction} ${callToAction}`].join('\n');
 }
 
+// Primeira regra que o roteiro descumpre, ou null quando ele está dentro de AD_SCRIPT_LIMITS e sobrevive ao formato de texto
+// (sem quebra de linha e sem espaços nas pontas, para `parseAdScript(formatAdScript(script))` devolver o mesmo roteiro).
+export function adScriptViolation ({ hook, benefits, callToAction }: AdScript): string | null {
+  const scene = (name: string, text: string, { min, max }: { min: number; max: number }) => {
+    if (/[\r\n]/.test(text) || text !== text.trim()) return `${name} com quebra de linha ou espaço nas pontas`;
+    return text.length < min || text.length > max ? `${name} com ${text.length} caracteres (de ${min} a ${max})` : null;
+  };
+  const { benefits: count } = AD_SCRIPT_LIMITS;
+
+  if (benefits.length < count.min || benefits.length > count.max) return `${benefits.length} benefícios (de ${count.min} a ${count.max})`;
+
+  return scene('Gancho', hook, AD_SCRIPT_LIMITS.hook)
+    ?? benefits.map((benefit, index) => scene(`Benefício ${index + 1}`, benefit, AD_SCRIPT_LIMITS.benefit)).find(Boolean)
+    ?? scene('Chamada', callToAction, AD_SCRIPT_LIMITS.callToAction);
+}
+
 // Lê um roteiro no formato de `formatAdScript`. Retorna null se o texto estiver em outro formato ou fora dos limites das cenas.
 export function parseAdScript (script: string): AdScript | null {
   const lines = script.replace(/\r\n/g, '\n').split('\n').map(line => line.trim()).filter(Boolean);
@@ -22,13 +38,9 @@ export function parseAdScript (script: string): AdScript | null {
   const callToAction = value(labels.callToAction);
   const benefitsStart = lines.indexOf(labels.benefits);
   const benefits = benefitsStart < 0 ? [] : lines.slice(benefitsStart + 1).filter(line => line.startsWith('- ')).map(line => line.slice(2).trim());
-  const within = (text: string | undefined, { min, max }: { min: number; max: number }) => !!text && text.length >= min && text.length <= max;
 
-  if (!within(hook, AD_SCRIPT_LIMITS.hook) || !within(callToAction, AD_SCRIPT_LIMITS.callToAction)) return null;
+  if (hook === undefined || callToAction === undefined) return null;
 
-  if (benefits.length < AD_SCRIPT_LIMITS.benefits.min || benefits.length > AD_SCRIPT_LIMITS.benefits.max) return null;
-
-  if (!benefits.every(benefit => within(benefit, AD_SCRIPT_LIMITS.benefit))) return null;
-
-  return { hook: hook!, benefits, callToAction: callToAction! };
+  const scenes = { hook, benefits, callToAction };
+  return adScriptViolation(scenes) ? null : scenes;
 }

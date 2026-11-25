@@ -208,3 +208,38 @@ test('a failed video download marks the video stage as failed', async () => {
   assert.equal(result, generation);
   assert.deepEqual(failures, [[generation, 'Falha ao baixar ou salvar o vídeo.']]);
 });
+
+test('a render with known speech completes with that text as the transcript and skips subtitles', async () => {
+  const { CompleteVideoGenerationUseCase } = require('../dist/modules/video-generation/application/use-cases/complete-video-generation.usecase');
+  const generation = { id: 'generation', companyId: 'company', contentId: 'content', revision: 1 };
+  const completed = [];
+  const stored = [];
+  const useCase = new CompleteVideoGenerationUseCase(
+    { claimCompletion: async () => ({ generation, claimed: true }), complete: async (...args) => completed.push(args), nextVideoFileNumber: async () => 42 },
+    {},
+    { put: async key => stored.push(key) },
+  );
+
+  await useCase.execute({
+    submissionId: 'submission', providerId: 'provider', outcome: { state: 'ready', url: 'render.mp4', narrated: false, transcript: 'Corra mais leve\nGaranta o seu', template: 'ProductAdChecklist' },
+  }, async () => 'stream');
+  assert.equal(completed[0][2], false, 'transcription and subtitles are not run');
+  assert.equal(completed[0][3], 'Corra mais leve\nGaranta o seu');
+  assert.deepEqual(stored, ['company/contents/content/videos/00042-ProductAdChecklist-generation.mp4'], 'the file name carries the sequence number and the template');
+  assert.equal(completed[0][1].storageKey, stored[0]);
+});
+
+test('video file names carry a zero-padded sequence number and only a safe template name', () => {
+  const { VideoAsset } = require('../dist/modules/video-generation/domain/entities/video-asset.entity');
+  assert.equal(VideoAsset.storageKeyFor('c', 'k', 'g', { number: 7, template: 'ProductAdOffer' }), 'c/contents/k/videos/00007-ProductAdOffer-g.mp4');
+  assert.equal(VideoAsset.storageKeyFor('c', 'k', 'g', { number: 123456 }), 'c/contents/k/videos/123456-g.mp4');
+  assert.equal(VideoAsset.storageKeyFor('c', 'k', 'g', { number: 1, template: '../x' }), 'c/contents/k/videos/00001-g.mp4', 'a template with path characters is ignored');
+  assert.equal(VideoAsset.storageKeyFor('c', 'k', 'g'), 'c/contents/k/videos/g.mp4');
+});
+
+test('render inputs saved before the rename read their script context from the old brief key', () => {
+  const { renderInput } = require('../dist/modules/video-generation/infra/prisma/video-generation.prisma-repository');
+  const context = { brand: 'Marca', objective: null, guidelines: 'g', products: ['P'] };
+  assert.deepEqual(renderInput({ script: 's', imageKeys: [], brief: context }), { script: 's', imageKeys: [], context });
+  assert.deepEqual(renderInput({ script: 's', imageKeys: [], context }), { script: 's', imageKeys: [], context });
+});

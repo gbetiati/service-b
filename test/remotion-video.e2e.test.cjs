@@ -160,8 +160,10 @@ test('claude script + remotion: script in background, brand voice and colors, vi
     assert.equal(generation.status, 'READY');
     assert.equal(generation.video.review.status, 'APPROVED');
     assert.equal(generation.video.captionedUrl, null);
-    assert.ok(generation.video.url.endsWith(`${companyId}/contents/${content.id}/videos/${generation.id}.mp4`));
-    assert.equal(objects.get(`${companyId}/contents/${content.id}/videos/${generation.id}.mp4`).toString(), 'remotion mp4');
+    const videoKey = [...objects.keys()].find(key => key.startsWith(`${companyId}/contents/${content.id}/videos/`));
+    assert.match(videoKey, new RegExp(`/videos/\\d{5,}-ProductAd\\w*-${generation.id}\\.mp4$`), 'sequence number, template and generation id');
+    assert.ok(generation.video.url.includes(videoKey));
+    assert.equal(objects.get(videoKey).toString(), 'remotion mp4');
     await poll(async () => [...objects.keys()], keys => !keys.some(key => key.startsWith('remotion-renders/')));
 
     const ready = await post(preparePath, token, undefined, 202);

@@ -26,5 +26,9 @@ export abstract class VideoGenerationRepository {
 
   abstract fail (generation: VideoGeneration, message: string, stage?: 'script' | 'video'): Promise<void>;
 
-  abstract complete (generation: VideoGeneration, video: VideoAsset, narrated?: boolean): Promise<void>;
+  // `narrated: false` deixa transcrição e legendas prontas sem rodar; `transcript` vira a transcrição do conteúdo.
+  abstract complete (generation: VideoGeneration, video: VideoAsset, narrated?: boolean, transcript?: string): Promise<void>;
+
+  // Próximo número da sequência usada no nome dos arquivos de vídeo.
+  abstract nextVideoFileNumber (): Promise<number>;
 }

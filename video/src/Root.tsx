@@ -8,8 +8,15 @@ import type { ProductAdTemplate } from '../../src/modules/video-generation/infra
 import { ProductAd } from './templates/ProductAd';
 import { ProductAdEditorial } from './templates/ProductAdEditorial';
 import { ProductAdKinetic } from './templates/ProductAdKinetic';
+import { ProductAdChecklist } from './templates/ProductAdChecklist';
+import { ProductAdCallouts } from './templates/ProductAdCallouts';
+import { ProductAdNative } from './templates/ProductAdNative';
+import { ProductAdOffer } from './templates/ProductAdOffer';
+import { ProductAdMontage } from './templates/ProductAdMontage';
 
-const components: Record<ProductAdTemplate, React.FC<ProductAdProps>> = { ProductAd, ProductAdEditorial, ProductAdKinetic };
+const components: Record<ProductAdTemplate, React.FC<ProductAdProps>> = {
+  ProductAd, ProductAdEditorial, ProductAdKinetic, ProductAdChecklist, ProductAdCallouts, ProductAdNative, ProductAdOffer, ProductAdMontage,
+};
 
 const defaultProps: ProductAdProps = {
   copy: {

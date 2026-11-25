@@ -6,7 +6,8 @@ import { Webhook } from 'standardwebhooks';
 // import { requiredEnv } from '@/shared/core/config';
 import { RemotionSettings } from './remotion.settings';
 
-export type RemotionRenderEvent = { submissionId: string; providerId: string } & ({ status: 'succeeded'; storageKey: string } | { status: 'failed' });
+// `transcript` é o texto da locução, quando o anúncio tem voz. `template` é o template sorteado para o render.
+export type RemotionRenderEvent = { submissionId: string; providerId: string } & ({ status: 'succeeded'; storageKey: string; template?: string; transcript?: string } | { status: 'failed' });
 
 // Intervalos entre tentativas. A conclusão inclui a revisão automática do vídeo, que pode levar mais de um minuto.
 const RETRY_DELAYS_MS = [2_000, 10_000, 30_000, 60_000];

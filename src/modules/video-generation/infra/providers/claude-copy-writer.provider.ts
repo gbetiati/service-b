@@ -6,7 +6,7 @@ import { requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
 import { COPYWRITING_GUIDE, COPYWRITING_RULES } from '@/shared/libs/ai/copywriting.prompt';
 import { CopySchema } from './product-ad-copy.schema';
-import { CopyBrief, CopyWriterProvider } from '../../domain/providers/copy-writer.provider';
+import { CopyContext, CopyWriterProvider } from '../../domain/providers/copy-writer.provider';
 
 const SYSTEM_PROMPT = `Você escreve a copy de um vídeo curto de marketing de produto, em português do Brasil.
 
@@ -33,15 +33,15 @@ export class ClaudeCopyWriterProvider implements CopyWriterProvider {
     return this.client ??= new Anthropic({ apiKey: requiredEnv('ANTHROPIC_API_KEY'), timeout: 60_000, maxRetries: 1 });
   }
 
-  async write (brief: CopyBrief) {
+  async write (context: CopyContext) {
     const model = this.config.get<string>('ANTHROPIC_MODEL')?.trim() || 'claude-sonnet-5-5';
     const fallbacks = this.config.get<string>('ANTHROPIC_FALLBACKS')?.trim() !== 'off';
     const product = JSON.stringify({
-      nome: brief.name, descricao: brief.description, marca: brief.brand,
-      voiceTone: brief.voiceTone, targetAudience: brief.targetAudience, copyGuidelines: brief.copyGuidelines, roteiro: brief.script,
+      nome: context.name, descricao: context.description, marca: context.brand,
+      voiceTone: context.voiceTone, targetAudience: context.targetAudience, copyGuidelines: context.copyGuidelines, roteiro: context.script,
     });
     const content: Anthropic.Beta.BetaContentBlockParam[] = [
-      ...(brief.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: brief.image.toString('base64') } }] : []),
+      ...(context.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: context.image.toString('base64') } }] : []),
       { type: 'text', text: `<produto>\n${product}\n</produto>\n\nEscreva a copy do vídeo.` },
     ];
 
