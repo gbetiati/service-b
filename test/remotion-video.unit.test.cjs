@@ -236,13 +236,24 @@ test('RemotionVideoProvider narrates the script in one take, cuts it at the paus
   assert.deepEqual([...h.objects.keys()], [h.provider.outputKey(providerId)], 'voice clips are removed after the render');
 });
 
-test('RemotionVideoProvider records one clip per scene when the take does not match the script', async () => {
+test('RemotionVideoProvider records the take again when the first one does not match the script', async () => {
+  let takes = 0;
+  const h = remotionHarness({ transcribe: async request => ++takes === 1 ? [{ text: 'Conforto', start: 0, end: 0.5 }] : fakeTake(request.audio.toString().slice('mp3:'.length)).words });
+  await h.provider.render({ ...request, audio: { backgroundMusic: false, voiceover: true } });
+  assert.equal((await h.event).status, 'succeeded');
+  assert.equal(h.spoken.length, 2, 'two takes, no clip per scene');
+  assert.deepEqual(h.spoken[0], h.spoken[1]);
+  assert.equal(h.tightened.length, 2 + validCopy.bullets.length, "one clip per scene");
+  assert.ok(h.tightened.every(Boolean), 'every clip is cut from the second take');
+});
+
+test('RemotionVideoProvider records one clip per scene when the take does not match the script twice', async () => {
   const h = remotionHarness({ transcribe: async () => [{ text: 'Conforto', start: 0, end: 0.5 }, { text: 'o', start: 0.5, end: 0.7 }] });
   await h.provider.render({ ...request, audio: { backgroundMusic: false, voiceover: true } });
   const event = await h.event;
   const lines = [validCopy.headline, ...validCopy.bullets, validCopy.cta];
   assert.equal(event.status, 'succeeded');
-  assert.deepEqual(h.spoken.slice(1), lines.map(text => ({ text, style: 'Enérgico' })), 'the truncated take is discarded and each scene gets its own call');
+  assert.deepEqual(h.spoken.slice(2), lines.map(text => ({ text, style: 'Enérgico' })), 'both truncated takes are discarded and each scene gets its own call');
   const { voiceover } = h.renders[0].props.audio;
   [voiceover.hook, ...voiceover.benefits, voiceover.cta].forEach((clip, index) => assert.equal(clip.durationInSeconds, Buffer.byteLength('mp3:' + lines[index]) / 15));
 });
@@ -251,7 +262,7 @@ test('RemotionVideoProvider records one clip per scene when the transcription is
   const h = remotionHarness({ transcribe: async () => { throw new AppError('unavailable', 'Configuração ausente: OPENAI_API_KEY'); } });
   await h.provider.render({ ...request, audio: { backgroundMusic: false, voiceover: true } });
   assert.equal((await h.event).status, 'succeeded');
-  assert.equal(h.spoken.length, 1 + 2 + validCopy.bullets.length);
+  assert.equal(h.spoken.length, 1 + 2 + validCopy.bullets.length, 'an unavailable transcription is not retried');
 });
 
 test('RemotionVideoProvider fails the render and leaves no voice clips behind when TTS fails', async () => {

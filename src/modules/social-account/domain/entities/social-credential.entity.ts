@@ -1,4 +1,7 @@
-const MIN_REFRESH_AGE_MS = 86_400_000;
+export const MIN_REFRESH_AGE_MS = 86_400_000;
+// O token de longa duração do Instagram vale 60 dias. A renovação automática começa 10 dias antes do fim,
+// para sobrar tempo de tentar de novo se o Instagram falhar.
+export const REFRESH_BEFORE_EXPIRY_MS = 10 * 86_400_000;
 
 export class SocialCredential {
   constructor(

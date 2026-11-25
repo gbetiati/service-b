@@ -1,25 +1,18 @@
-import { Controller, Get, Header, Headers, Param, ParseUUIDPipe, Post, Query, Res } from '@nestjs/common';
-import type { CookieOptions, Response } from 'express';
-import { servicePublicUrl } from '@/shared/core/config';
+import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { frontendUrl } from '@/shared/core/config';
 import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
-import { InstagramCallbackDto } from '../../application/dto/instagram-callback.dto';
+import { CompleteInstagramConnectionDto } from '../../application/dto/complete-instagram-connection.dto';
 import { ConnectInstagramUseCase } from '../../application/use-cases/connect-instagram.usecase';
+import { DisconnectSocialAccountUseCase } from '../../application/use-cases/disconnect-social-account.usecase';
 import { ListSocialAccountsUseCase } from '../../application/use-cases/list-social-accounts.usecase';
 import { RefreshInstagramTokenUseCase } from '../../application/use-cases/refresh-instagram-token.usecase';
 import { StartInstagramConnectionUseCase } from '../../application/use-cases/start-instagram-connection.usecase';
-import { OAUTH_STATE_TTL_MS } from '../../domain/entities/oauth-state';
-import { INSTAGRAM_CALLBACK_PATH } from '../providers/instagram.provider';
 
-const oauthCookie = 'service_b_instagram_oauth';
-
-const cookieOptions = (): CookieOptions => ({
-  httpOnly: true, sameSite: 'lax', secure: servicePublicUrl(INSTAGRAM_CALLBACK_PATH).protocol === 'https:', path: INSTAGRAM_CALLBACK_PATH,
-});
-
-function readCookie (header: string | undefined, name: string) {
-  const prefix = name + '=';
-  return header?.split(';').map(value => value.trim()).find(value => value.startsWith(prefix))?.slice(prefix.length);
-}
+// Página do frontend que recebe o retorno do Instagram e conclui a conexão com a sessão do usuário.
+export const INSTAGRAM_FRONTEND_CALLBACK_PATH = '/social-accounts/instagram/callback';
+// Parâmetros do retorno do Instagram repassados ao frontend, com tamanho máximo.
+const FORWARDED_PARAMS: Record<string, number> = { state: 64, code: 4096, error: 160, error_reason: 160 };
 
 @Controller('social-accounts')
 export class SocialAccountController {
@@ -28,25 +21,37 @@ export class SocialAccountController {
     private readonly connectInstagramUseCase: ConnectInstagramUseCase,
     private readonly listSocialAccountsUseCase: ListSocialAccountsUseCase,
     private readonly refreshInstagramTokenUseCase: RefreshInstagramTokenUseCase,
+    private readonly disconnectSocialAccountUseCase: DisconnectSocialAccountUseCase,
   ) {}
 
+  // Devolve o link de autorização e o nonce, que o frontend guarda na aba até o retorno.
   @Post('instagram/connect')
   @Authenticated()
   @Header('Cache-Control', 'no-store')
-  async start (@Res({ passthrough: true }) res: Response) {
-    const options = cookieOptions();
-    const { authorizationUrl, nonce } = await this.startInstagramConnectionUseCase.execute();
-    res.cookie(oauthCookie, nonce, { ...options, maxAge: OAUTH_STATE_TTL_MS });
-    return { authorizationUrl };
+  start () {
+    return this.startInstagramConnectionUseCase.execute();
   }
 
+  // Endereço registrado na Meta. Não conclui nada: só leva o retorno do Instagram para a página do frontend (FRONTEND_URL).
   @Get('instagram/callback')
   @Header('Cache-Control', 'no-store')
   @Header('Referrer-Policy', 'no-referrer')
-  async callback (@Query() dto: InstagramCallbackDto, @Headers('cookie') cookies: string | undefined, @Res({ passthrough: true }) res: Response) {
-    const account = await this.connectInstagramUseCase.execute(dto, readCookie(cookies, oauthCookie));
-    res.clearCookie(oauthCookie, cookieOptions());
-    return account;
+  callback (@Query() query: Record<string, unknown>, @Res() res: Response) {
+    const target = frontendUrl(INSTAGRAM_FRONTEND_CALLBACK_PATH);
+    for (const [name, max] of Object.entries(FORWARDED_PARAMS)) {
+      const value = query[name];
+
+      if (typeof value === 'string' && value && value.length <= max) target.searchParams.set(name, value);
+    }
+    res.redirect(303, target.href);
+  }
+
+  @Post('instagram/callback')
+  @Authenticated()
+  @HttpCode(201)
+  @Header('Cache-Control', 'no-store')
+  complete (@Body() dto: CompleteInstagramConnectionDto) {
+    return this.connectInstagramUseCase.execute(dto);
   }
 
   @Get()
@@ -59,5 +64,12 @@ export class SocialAccountController {
   @Authenticated()
   refresh (@Param('id', ParseUUIDPipe) id: string) {
     return this.refreshInstagramTokenUseCase.execute(id);
+  }
+
+  @Post(':id/disconnect')
+  @Authenticated()
+  @HttpCode(200)
+  disconnect (@Param('id', ParseUUIDPipe) id: string) {
+    return this.disconnectSocialAccountUseCase.execute(id);
   }
 }

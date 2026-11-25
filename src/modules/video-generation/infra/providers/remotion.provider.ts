@@ -36,6 +36,8 @@ const providerIdPattern = new RegExp(`^${providerPrefix}${uuid}$`);
 const outputKeyPattern = new RegExp(`^${outputPrefix}${uuid}\\.mp4$`);
 // Os clipes da locução ficam no bucket só durante o render; a URL assinada precisa durar a fila e o render.
 const VOICE_URL_TTL_SECONDS = 7200;
+// A tomada única é gravada de novo uma vez quando não confere com o roteiro: o TTS às vezes corta a última frase.
+const TAKE_ATTEMPTS = 2;
 // Reels do Instagram.
 const format = '9x16';
 
@@ -158,7 +160,7 @@ export class RemotionVideoProvider implements VideoProvider {
   private async voiceover (providerId: string, copy: ProductAdCopy, voiceTone: string | undefined, directory: string): Promise<Voiceover> {
     const lines = [copy.headline, ...copy.bullets, copy.cta];
     const style = voiceTone ? { style: voiceTone } : {};
-    const paths = await this.recordTake(lines, style, directory).catch(error => {
+    const paths = await this.recordCheckedTake(providerId, lines, style, directory).catch(error => {
       this.logger.warn(`Locução em tomada única descartada; gravando trecho a trecho. providerId=${providerId} motivo=${describe(error)}`);
       return this.recordLines(lines, style, directory);
     });
@@ -176,6 +178,19 @@ export class RemotionVideoProvider implements VideoProvider {
     return { clips: { hook: clips[0], benefits: clips.slice(1, -1), cta: clips[clips.length - 1] }, keys, transcript: lines.join('\n') };
   }
 
+  // Só uma tomada que não conferiu é gravada de novo. Falha do TTS ou da transcrição vai direto para o modo trecho a trecho.
+  private async recordCheckedTake (providerId: string, lines: string[], style: { style?: string }, directory: string) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.recordTake(lines, style, directory);
+      } catch (error) {
+        if (!(error instanceof TakeMismatchError) || attempt >= TAKE_ATTEMPTS) throw error;
+
+        this.logger.warn(`Locução em tomada única não conferiu; gravando de novo. providerId=${providerId} tentativa=${attempt} motivo=${describe(error)}`);
+      }
+    }
+  }
+
   // Tomada única: o roteiro inteiro numa chamada, para a voz manter entonação e timbre de uma frase para outra. A
   // transcrição confere se cada trecho foi falado e aponta a pausa onde cortar; qualquer divergência descarta a tomada.
   private async recordTake (lines: string[], style: { style?: string }, directory: string) {
@@ -184,7 +199,7 @@ export class RemotionVideoProvider implements VideoProvider {
     const [words, silences] = await Promise.all([this.transcriptionProvider.transcribe({ audio: await readFile(take), language: 'pt' }), this.voiceClips.silences(take)]);
     const alignment = alignVoiceLines(lines, words, silences);
 
-    if (!alignment.ok) throw new AppError('upstream', `A locução não confere com o roteiro: ${alignment.reason}.`);
+    if (!alignment.ok) throw new TakeMismatchError(alignment.reason);
 
     const { cuts } = alignment;
     return settleAll(lines.map(async (_, index) => {
@@ -229,6 +244,13 @@ export class RemotionVideoProvider implements VideoProvider {
     // if (ProductAdPolicy.findCommercialClaim(result.data)) throw new AppError('upstream', 'A copy gerada citou preço, desconto ou condição comercial e foi descartada.');
     //
     // return result.data;
+  }
+}
+
+// Tomada única gravada, mas diferente do roteiro (trecho faltando, fala a mais ou sem pausa entre trechos).
+class TakeMismatchError extends AppError {
+  constructor(reason: string) {
+    super('upstream', `A locução não confere com o roteiro: ${reason}.`);
   }
 }
 

@@ -25,6 +25,7 @@ test('company onboarding through content preparation and deferred publication cr
   process.env.INSTAGRAM_GRAPH_VERSION = 'v27.0';
   process.env.NODE_ENV = 'test';
   process.env.SERVICE_BASE_URL = 'http://127.0.0.1';
+  process.env.FRONTEND_URL = 'http://127.0.0.1:3001';
   const { AppModule } = require('../dist/app.module');
   const { PrismaService } = require('../dist/prisma/prisma.service');
   const { AppErrorFilter } = require('../dist/shared/core/errors/app-error.filter');
@@ -157,6 +158,7 @@ test('company onboarding through content preparation and deferred publication cr
 
         if (url.pathname.endsWith('/media')) {
           assert.equal(request.body.get('media_type'), 'REELS');
+          assert.equal(request.body.get('share_to_feed'), 'true');
           assert.equal(request.body.get('caption'), 'Legenda de catálogo');
           return { id: 'test-container' };
         }
@@ -289,20 +291,35 @@ test('company onboarding through content preparation and deferred publication cr
     assert.deepEqual(history.map(item => item.revision), [2, 1]);
     assert.equal(history[1].snapshot.aiScript, 'Roteiro criado pela IA.');
 
-    const { data: connection, cookie } = await request('/social-accounts/instagram/connect', { method: 'POST', token, status: 201 });
-    assert.ok(cookie);
+    const { data: connection } = await request('/social-accounts/instagram/connect', { method: 'POST', token, status: 201 });
+    assert.match(connection.nonce, /^[A-Za-z0-9_-]{43}$/);
     const authorization = new URL(connection.authorizationUrl);
     assert.equal(authorization.searchParams.get('redirect_uri'), 'http://127.0.0.1/social-accounts/instagram/callback');
     const state = authorization.searchParams.get('state');
-    const callback = '/social-accounts/instagram/callback?code=accepted-code&state=' + state;
-    await get(callback, undefined, 400);
-    const { data: account } = await request(callback, { cookie });
+    const redirect = await fetch(base + '/social-accounts/instagram/callback?code=accepted-code&state=' + state + '&extra=ignored', { redirect: 'manual' });
+    assert.equal(redirect.status, 303, 'the registered callback only sends the browser back to the frontend');
+    assert.equal(redirect.headers.get('location'), 'http://127.0.0.1:3001/social-accounts/instagram/callback?state=' + state + '&code=accepted-code');
+    const complete = (body, options = {}) => request('/social-accounts/instagram/callback', { method: 'POST', token, body, status: 201, ...options });
+    await complete({ state, nonce: connection.nonce, code: 'accepted-code' }, { token: undefined, status: 401 });
+    await complete({ state, nonce: 'x'.repeat(43), code: 'accepted-code' }, { status: 400 });
+    const { data: account } = await complete({ state, nonce: connection.nonce, code: 'accepted-code' });
     assert.equal(account.accountHandle, 'test_business');
-    await request(callback, { cookie, status: 400 });
+    await complete({ state, nonce: connection.nonce, code: 'accepted-code' }, { status: 400 });
+    const { data: foreign } = await request('/social-accounts/instagram/connect', { method: 'POST', token, status: 201 });
+    const foreignState = new URL(foreign.authorizationUrl).searchParams.get('state');
+    await complete({ state: foreignState, nonce: foreign.nonce, code: 'accepted-code' }, { token: other, status: 400 });
     assert.deepEqual(await get('/social-accounts', other), []);
     const credential = await db.socialCredential.findFirstOrThrow({ where: { socialAccountId: account.id } });
     assert.notEqual(credential.encryptedValue, 'instagram-long-token');
     assert.equal(account.encryptedValue, undefined);
+    await post('/social-accounts/' + account.id + '/disconnect', other, undefined, 404);
+    const disconnected = await post('/social-accounts/' + account.id + '/disconnect', token, undefined, 200);
+    assert.equal(disconnected.status, 'DISCONNECTED');
+    assert.equal(await db.socialCredential.count({ where: { socialAccountId: account.id } }), 0, 'the stored token is deleted');
+    assert.equal((await post('/social-accounts/' + account.id + '/disconnect', token, undefined, 200)).status, 'DISCONNECTED', 'disconnecting again changes nothing');
+    const again = await post('/social-accounts/instagram/connect', token);
+    const reconnected = await post('/social-accounts/instagram/callback', token, { state: new URL(again.authorizationUrl).searchParams.get('state'), nonce: again.nonce, code: 'accepted-code' });
+    assert.deepEqual([reconnected.id, reconnected.status], [account.id, 'ACTIVE'], 'connecting again reactivates the same account');
 
     await db.content.update({ where: { id: content.id }, data: { aiScript: '', scriptStatus: 'NOT_STARTED' } });
     const preparePath = '/publications/contents/' + content.id + '/prepare';

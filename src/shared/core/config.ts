@@ -9,7 +9,15 @@ export function requiredEnv (name: string): string {
 }
 
 export function servicePublicUrl (path: string): URL {
-  const variable = process.env.NODE_ENV === 'production' ? 'PROD_SERVICE_BASE_URL' : 'SERVICE_BASE_URL';
+  return originUrl(process.env.NODE_ENV === 'production' ? 'PROD_SERVICE_BASE_URL' : 'SERVICE_BASE_URL', path);
+}
+
+// Página do frontend, como o retorno da autorização do Instagram. FRONTEND_URL recebe somente a origem.
+export function frontendUrl (path: string): URL {
+  return originUrl('FRONTEND_URL', path);
+}
+
+function originUrl (variable: string, path: string): URL {
   const base = requiredEnv(variable);
 
   if (!URL.canParse(base)) {

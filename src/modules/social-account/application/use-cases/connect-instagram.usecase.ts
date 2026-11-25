@@ -5,8 +5,10 @@ import { OAuthState } from '../../domain/entities/oauth-state';
 import { SocialPlatformProvider } from '../../domain/providers/social-platform.provider';
 import { TokenCipherProvider } from '../../domain/providers/token-cipher.provider';
 import { SocialAccountRepository } from '../../domain/repositories/social-account.repository';
-import { InstagramCallbackDto } from '../dto/instagram-callback.dto';
+import { CompleteInstagramConnectionDto } from '../dto/complete-instagram-connection.dto';
 
+// Conclui a conexão iniciada pelo mesmo usuário: o state precisa casar com o nonce guardado na aba que abriu a
+// autorização. Assim, um link de autorização gerado por outra pessoa não liga a conta de quem o abriu à empresa dela.
 @Injectable()
 export class ConnectInstagramUseCase {
   constructor(
@@ -16,17 +18,15 @@ export class ConnectInstagramUseCase {
     private readonly requestContext: RequestContext,
   ) {}
 
-  async execute (dto: InstagramCallbackDto, nonce: string | undefined) {
-    if (!OAuthState.isValidToken(nonce)) throw new AppError('invalid', 'Abra a autorização no navegador que iniciou a conexão.');
+  async execute ({ state, nonce, code, error }: CompleteInstagramConnectionDto) {
+    const { userId, companyId } = this.requestContext.identity;
+    const owner = await this.socialAccountRepository.consumeState(OAuthState.hash(state, nonce));
 
-    const identity = await this.socialAccountRepository.consumeState(OAuthState.hash(dto.state, nonce));
+    if (!owner || owner.userId !== userId || owner.companyId !== companyId) throw new AppError('invalid', 'A autorização expirou, já foi utilizada ou foi iniciada em outra sessão.');
 
-    if (!identity) throw new AppError('invalid', 'A autorização expirou ou já foi utilizada.');
+    if (error || !code) throw new AppError('invalid', 'A autorização do Instagram não foi concluída.');
 
-    if (dto.error || !dto.code) throw new AppError('invalid', 'A autorização do Instagram não foi concluída.');
-
-    this.requestContext.setIdentity(identity);
-    const { accessToken, ...profile } = await this.socialPlatformProvider.connect(dto.code);
-    return this.socialAccountRepository.saveInstagram(profile, this.tokenCipherProvider.encrypt(accessToken, identity.companyId));
+    const { accessToken, ...profile } = await this.socialPlatformProvider.connect(code);
+    return this.socialAccountRepository.saveInstagram(profile, this.tokenCipherProvider.encrypt(accessToken, companyId));
   }
 }

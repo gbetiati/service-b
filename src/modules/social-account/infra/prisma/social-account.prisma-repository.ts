@@ -74,6 +74,34 @@ export class PrismaSocialAccountRepository implements SocialAccountRepository {
     if (!result.count) throw new AppError('conflict', 'A credencial mudou durante a renovação.');
   }
 
+  // Marca a conta como desconectada e apaga o token guardado. Repetir não muda nada.
+  disconnect (accountId: string) {
+    const companyId = this.requestContext.companyId;
+    return this.prismaService.serializable(async tx => {
+      const found = await tx.socialAccount.findFirst({ where: { id: accountId, companyId }, select: { id: true } });
+
+      if (!found) return null;
+
+      await tx.socialCredential.deleteMany({ where: { companyId, socialAccountId: accountId } });
+      return this.toDomain(await tx.socialAccount.update({ where: { id: accountId }, data: { status: 'DISCONNECTED' } }));
+    });
+  }
+
+  findCredentialsToRefresh (expiringBefore: Date, updatedBefore: Date, limit: number) {
+    return this.prismaService.socialCredential.findMany({
+      where: { kind: 'access_token', expiresAt: { gt: new Date(), lte: expiringBefore }, updatedAt: { lte: updatedBefore }, socialAccount: { status: 'ACTIVE' } },
+      select: { companyId: true, socialAccountId: true }, orderBy: { expiresAt: 'asc' }, take: limit,
+    });
+  }
+
+  // Conta com token vencido não pode mais ser renovada nem publicar: precisa ser conectada de novo.
+  async disconnectExpired (now: Date) {
+    const result = await this.prismaService.socialAccount.updateMany({
+      where: { status: 'ACTIVE', credentials: { some: { kind: 'access_token', expiresAt: { lte: now } } } }, data: { status: 'DISCONNECTED' },
+    });
+    return result.count;
+  }
+
   private toDomain (row: Row) {
     return new SocialAccount(
       row.id, row.companyId, row.platform, row.externalId, row.accountHandle, row.displayName,
