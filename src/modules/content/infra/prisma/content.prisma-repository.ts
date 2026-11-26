@@ -7,7 +7,7 @@ import { ContentMapper } from '../../application/mappers/content.mapper';
 import { Content, Editorial } from '../../domain/entities/content.entity';
 import { ContentAsset } from '../../domain/entities/content-asset.entity';
 import { ContentStatus } from '../../domain/entities/content-status';
-import { ContentRepository } from '../../domain/repositories/content.repository';
+import { ContentListFilters, ContentRepository } from '../../domain/repositories/content.repository';
 
 const include = {
   assets: { orderBy: { position: 'asc' } }, products: { orderBy: { productId: 'asc' } },
@@ -102,10 +102,17 @@ export class PrismaContentRepository implements ContentRepository {
     return { campaign, rule, products, images };
   }
 
-  async findAll (skip: number, take: number) {
-    const rows = await this.prismaService.content.findMany({
-      where: { companyId: this.requestContext.companyId }, include, skip, take, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
+  async findAll (skip: number, take: number, { search, productId, status }: ContentListFilters = {}) {
+    const contains = { contains: search, mode: 'insensitive' } as const;
+    const where: Prisma.ContentWhereInput = {
+      companyId: this.requestContext.companyId,
+      status,
+      AND: [
+        productId ? { OR: [{ productId }, { products: { some: { productId } } }] } : {},
+        search ? { OR: [{ product: { name: contains } }, { campaing: { name: contains } }, { id: contains }] } : {},
+      ],
+    };
+    const rows = await this.prismaService.content.findMany({ where, include, skip, take, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
     return rows.map(row => this.toDomain(row));
   }
 
@@ -113,6 +120,24 @@ export class PrismaContentRepository implements ContentRepository {
     return this.prismaService.contentHistory.findMany({
       where: { companyId: this.requestContext.companyId, contentId }, select: { revision: true, snapshot: true, createdAt: true },
       orderBy: { revision: 'desc' }, skip, take,
+    });
+  }
+
+  delete (id: string) {
+    const companyId = this.requestContext.companyId;
+    return this.prismaService.serializable(async tx => {
+      const where = { companyId_id: { companyId, id } };
+      const content = await tx.content.findUnique({ where, select: { videos: { select: { storageKey: true, captionedStorageKey: true } } } });
+
+      if (!content) return null;
+
+      // Publicação sendo enviada ao Instagram agora: apagar no meio deixaria o post sem registro aqui.
+      if (await tx.publication.count({ where: { companyId, status: 'PUBLISHING', schedule: { contentId: id } } })) {
+        throw new AppError('conflict', 'O conteúdo está sendo publicado agora. Tente de novo em alguns minutos.');
+      }
+
+      await tx.content.delete({ where });
+      return content.videos.flatMap(video => video.captionedStorageKey ? [video.storageKey, video.captionedStorageKey] : [video.storageKey]);
     });
   }
 

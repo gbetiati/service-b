@@ -22,6 +22,6 @@ export class LoginUseCase {
       throw new AppError('unauthorized', 'E-mail ou senha inválidos.');
     }
 
-    return { userId: user.id, companyId: user.companyId, accessToken: await this.sessionTokenProvider.sign(user.id, user.companyId) };
+    return { userId: user.id, companyId: user.companyId, email: user.email, accessToken: await this.sessionTokenProvider.sign(user.id, user.companyId) };
   }
 }

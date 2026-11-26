@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ProductRepository } from '../../domain/repositories/product.repository';
+import { ProductPageDto } from '../dto/product-page.dto';
 
 @Injectable()
 export class ListProductUseCase {
@@ -7,7 +8,7 @@ export class ListProductUseCase {
     private readonly productRepository: ProductRepository,
   ) {}
 
-  execute () {
-    return this.productRepository.findAll();
+  execute (page: ProductPageDto = {}) {
+    return this.productRepository.findAll(page.offset, page.limit);
   }
 }

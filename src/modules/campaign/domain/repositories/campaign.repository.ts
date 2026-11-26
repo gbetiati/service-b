@@ -6,4 +6,7 @@ export abstract class CampaignRepository {
   abstract findById (id: string): Promise<Campaign | null>;
 
   abstract findAll (): Promise<Campaign[]>;
+
+  // Exclui a campanha com as regras dela. Devolve false se não existir.
+  abstract delete (id: string): Promise<boolean>;
 }

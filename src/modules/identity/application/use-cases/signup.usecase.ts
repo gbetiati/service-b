@@ -17,6 +17,6 @@ export class SignupUseCase {
     const passwordHash = await this.passwordHasher.hash(dto.password);
     const user = await this.userRepository.createWithCompany(dto.companyName, User.normalizeEmail(dto.email), passwordHash);
 
-    return { userId: user.id, companyId: user.companyId, accessToken: await this.sessionTokenProvider.sign(user.id, user.companyId) };
+    return { userId: user.id, companyId: user.companyId, email: user.email, accessToken: await this.sessionTokenProvider.sign(user.id, user.companyId) };
   }
 }

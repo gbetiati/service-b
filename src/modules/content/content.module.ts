@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ExternalApiModule } from '@/shared/libs/http/external-api.module';
+import { StorageModule } from '@/shared/libs/storage/storage.module';
 import { CreateContentUseCase } from './application/use-cases/create-content.usecase';
+import { DeleteContentUseCase } from './application/use-cases/delete-content.usecase';
 import { GetContentDetailsUseCase } from './application/use-cases/get-content-details.usecase';
 import { GetContentHistoryUseCase } from './application/use-cases/get-content-history.usecase';
 import { ListContentUseCase } from './application/use-cases/list-content.usecase';
@@ -22,10 +24,10 @@ function claudeScriptProvider (claude: ClaudeScriptProvider): ScriptProvider {
 }
 
 @Module({
-  imports: [ExternalApiModule],
+  imports: [ExternalApiModule, StorageModule],
   controllers: [ContentController],
   providers: [
-    CreateContentUseCase, GetContentDetailsUseCase, GetContentHistoryUseCase, ListContentUseCase, UpdateContentUseCase,
+    CreateContentUseCase, DeleteContentUseCase, GetContentDetailsUseCase, GetContentHistoryUseCase, ListContentUseCase, UpdateContentUseCase,
     { provide: ContentPreparationRepository, useClass: PrismaContentPreparationRepository },
     PrismaContentRepository,
     { provide: ContentRepository, useExisting: PrismaContentRepository },

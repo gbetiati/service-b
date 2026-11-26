@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Product as Row } from '@prisma/client';
+import { assertCatalogUnused } from '@/prisma/catalog-usage';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { Product } from '../../domain/entities/product.entity';
@@ -22,9 +23,25 @@ export class PrismaProductRepository implements ProductRepository {
     return row && this.toDomain(row);
   }
 
-  async findAll () {
-    const rows = await this.prismaService.product.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
+  async findAll (offset?: number, limit?: number) {
+    const rows = await this.prismaService.product.findMany({
+      where: { companyId: this.requestContext.companyId }, skip: offset, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
     return rows.map(row => this.toDomain(row));
+  }
+
+  delete (id: string) {
+    const companyId = this.requestContext.companyId;
+    return this.prismaService.serializable(async tx => {
+      const where = { companyId_id: { companyId, id } };
+      const product = await tx.product.findUnique({ where, select: { media: { select: { storageKey: true } } } });
+
+      if (!product) return null;
+
+      await assertCatalogUnused(tx, companyId, { productIds: [id] }, 'O produto é usado');
+      await tx.product.delete({ where });
+      return product.media.map(media => media.storageKey);
+    });
   }
 
   private toDomain (row: Row) {

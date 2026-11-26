@@ -5,5 +5,8 @@ export abstract class ProductRepository {
 
   abstract findById (id: string): Promise<Product | null>;
 
-  abstract findAll (): Promise<Product[]>;
+  abstract findAll (offset?: number, limit?: number): Promise<Product[]>;
+
+  // Exclui o produto com as imagens. Devolve as chaves dos arquivos no storage, ou null se não existir.
+  abstract delete (id: string): Promise<string[] | null>;
 }

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ContentRepository } from '../../domain/repositories/content.repository';
-import { ContentPageDto } from '../dto/content-page.dto';
+import { ListContentDto } from '../dto/list-content.dto';
 
 @Injectable()
 export class ListContentUseCase {
@@ -8,7 +8,7 @@ export class ListContentUseCase {
     private readonly contentRepository: ContentRepository,
   ) {}
 
-  execute (page: ContentPageDto) {
-    return this.contentRepository.findAll(page.offset, page.limit);
+  execute ({ offset, limit, search, productId, status }: ListContentDto) {
+    return this.contentRepository.findAll(offset, limit, { search: search || undefined, productId, status });
   }
 }

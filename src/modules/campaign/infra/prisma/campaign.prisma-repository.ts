@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Campaign as Row } from '@prisma/client';
+import { assertCatalogUnused } from '@/prisma/catalog-usage';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { Campaign } from '../../domain/entities/campaign.entity';
@@ -25,6 +26,19 @@ export class PrismaCampaignRepository implements CampaignRepository {
   async findAll () {
     const rows = await this.prismaService.campaign.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
+  }
+
+  delete (id: string) {
+    const companyId = this.requestContext.companyId;
+    return this.prismaService.serializable(async tx => {
+      const where = { companyId_id: { companyId, id } };
+
+      if (!await tx.campaign.findUnique({ where, select: { id: true } })) return false;
+
+      await assertCatalogUnused(tx, companyId, { campaignIds: [id] }, 'A campanha é usada');
+      await tx.campaign.delete({ where });
+      return true;
+    });
   }
 
   private toDomain (row: Row) {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Brand as Row } from '@prisma/client';
+import { assertCatalogUnused } from '@/prisma/catalog-usage';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { Brand } from '../../domain/entities/brand.entity';
@@ -25,6 +26,23 @@ export class PrismaBrandRepository implements BrandRepository {
   async findAll () {
     const rows = await this.prismaService.brand.findMany({ where: { companyId: this.requestContext.companyId }, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.toDomain(row));
+  }
+
+  delete (id: string) {
+    const companyId = this.requestContext.companyId;
+    return this.prismaService.serializable(async tx => {
+      const brand = await tx.brand.findUnique({
+        where: { companyId_id: { companyId, id } },
+        select: { campaigns: { select: { id: true } }, products: { select: { id: true, media: { select: { storageKey: true } } } } },
+      });
+
+      if (!brand) return null;
+
+      const productIds = brand.products.map(product => product.id);
+      await assertCatalogUnused(tx, companyId, { campaignIds: brand.campaigns.map(campaign => campaign.id), productIds }, 'A marca é usada');
+      await tx.brand.delete({ where: { companyId_id: { companyId, id } } });
+      return brand.products.flatMap(product => product.media.map(media => media.storageKey));
+    });
   }
 
   private toDomain (row: Row) {
