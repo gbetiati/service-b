@@ -1,8 +1,8 @@
 import React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, ProductImage, SafeArea, benefitGap, fitFontSize, inkOnWhite, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout, useSafeArea } from './shared';
-import { AdAudio, AudioCues } from './audio';
+import type { ProductAdProps } from '../../../../src/modules/video-generation/domain/entities/product-ad';
+import { imageAt, FONT_FAMILY, ProductImage, SafeArea, benefitGap, fitFontSize, inkOnWhite, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout, useSafeArea } from '../shared';
+import { AdAudio, AudioCues } from '../audio';
 
 // Lista de verificação: a headline promete, cada benefício é marcado num cartão e o vídeo fecha com um toque no CTA.
 // Linha do tempo (30 fps, 450 frames = 15 s). Os itens são marcados no ritmo da locução e o fechamento com preço e
@@ -23,13 +23,13 @@ export const ProductAdChecklist: React.FC<ProductAdProps> = ({ copy, product, br
       <AdAudio audio={audio} cues={audioCues(copy.bullets.length)} />
       <DotGrid color={accent} />
       <Sequence from={SCENES.hook[0]} durationInFrames={SCENES.hook[1]} name="Hook">
-        <HookScene imageUrl={product.imageUrl} headline={copy.headline} color={color} accent={accent} duration={SCENES.hook[1]} />
+        <HookScene imageUrl={imageAt(product, 0)} headline={copy.headline} color={color} accent={accent} duration={SCENES.hook[1]} />
       </Sequence>
       <Sequence from={SCENES.checklist[0]} durationInFrames={SCENES.checklist[1]} name="Checklist">
-        <ChecklistScene imageUrl={product.imageUrl} name={product.name} bullets={copy.bullets} color={pop} duration={SCENES.checklist[1]} />
+        <ChecklistScene imageUrl={imageAt(product, 1)} name={product.name} bullets={copy.bullets} color={pop} duration={SCENES.checklist[1]} />
       </Sequence>
       <Sequence from={SCENES.close[0]} durationInFrames={SCENES.close[1]} name="Close">
-        <CloseScene imageUrl={product.imageUrl} name={product.name} price={product.price} oldPrice={product.oldPrice} cta={copy.cta} logoUrl={brand.logoUrl} color={pop} />
+        <CloseScene imageUrl={imageAt(product, 2)} name={product.name} price={product.price} oldPrice={product.oldPrice} cta={copy.cta} logoUrl={brand.logoUrl} color={pop} />
       </Sequence>
     </AbsoluteFill>
   );

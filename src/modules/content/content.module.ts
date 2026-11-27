@@ -6,6 +6,7 @@ import { DeleteContentUseCase } from './application/use-cases/delete-content.use
 import { GetContentDetailsUseCase } from './application/use-cases/get-content-details.usecase';
 import { GetContentHistoryUseCase } from './application/use-cases/get-content-history.usecase';
 import { ListContentUseCase } from './application/use-cases/list-content.usecase';
+import { ReviewContentUseCase } from './application/use-cases/review-content.usecase';
 import { UpdateContentUseCase } from './application/use-cases/update-content.usecase';
 import { ScriptProvider } from './domain/providers/script.provider';
 import { ContentPreparationRepository } from './domain/repositories/content-preparation.repository';
@@ -27,7 +28,7 @@ function claudeScriptProvider (claude: ClaudeScriptProvider): ScriptProvider {
   imports: [ExternalApiModule, StorageModule],
   controllers: [ContentController],
   providers: [
-    CreateContentUseCase, DeleteContentUseCase, GetContentDetailsUseCase, GetContentHistoryUseCase, ListContentUseCase, UpdateContentUseCase,
+    CreateContentUseCase, DeleteContentUseCase, GetContentDetailsUseCase, GetContentHistoryUseCase, ListContentUseCase, UpdateContentUseCase, ReviewContentUseCase,
     { provide: ContentPreparationRepository, useClass: PrismaContentPreparationRepository },
     PrismaContentRepository,
     { provide: ContentRepository, useExisting: PrismaContentRepository },

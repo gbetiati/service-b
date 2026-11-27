@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, P
 import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
 import { CreateContentDto } from '../../application/dto/create-content.dto';
 import { UpdateContentDto } from '../../application/dto/update-content.dto';
+import { ReviewContentDto } from '../../application/dto/review-content.dto';
 import { ContentPageDto } from '../../application/dto/content-page.dto';
 import { ListContentDto } from '../../application/dto/list-content.dto';
 import { ContentMapper } from '../../application/mappers/content.mapper';
@@ -11,6 +12,7 @@ import { UpdateContentUseCase } from '../../application/use-cases/update-content
 import { GetContentDetailsUseCase } from '../../application/use-cases/get-content-details.usecase';
 import { GetContentHistoryUseCase } from '../../application/use-cases/get-content-history.usecase';
 import { ListContentUseCase } from '../../application/use-cases/list-content.usecase';
+import { ReviewContentUseCase } from '../../application/use-cases/review-content.usecase';
 
 @Controller('contents')
 @Authenticated()
@@ -22,6 +24,7 @@ export class ContentController {
     private readonly getContentHistoryUseCase: GetContentHistoryUseCase,
     private readonly listContentUseCase: ListContentUseCase,
     private readonly deleteContentUseCase: DeleteContentUseCase,
+    private readonly reviewContentUseCase: ReviewContentUseCase,
   ) {}
 
   @Post()
@@ -32,6 +35,12 @@ export class ContentController {
   @Patch(':id')
   async update (@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateContentDto) {
     return ContentMapper.toResponse(await this.updateContentUseCase.execute(id, dto));
+  }
+
+  // Revisão humana: aprova ou reprova a revisão atual do conteúdo.
+  @Patch(':id/approval')
+  async review (@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewContentDto) {
+    return ContentMapper.toResponse(await this.reviewContentUseCase.execute(id, dto));
   }
 
   @Delete(':id')

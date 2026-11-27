@@ -1,11 +1,11 @@
 import React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, SafeArea, benefitGap, fitFontSize, mix, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout, useSafeArea } from './shared';
-import { AdAudio, AudioCues } from './audio';
+import type { ProductAdProps } from '../../../../src/modules/video-generation/domain/entities/product-ad';
+import { productImages, FONT_FAMILY, SafeArea, benefitGap, fitFontSize, mix, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout, useSafeArea } from '../shared';
+import { AdAudio, AudioCues } from '../audio';
 
 // Vitrine com anotações: a foto em tela cheia encolhe para um círculo iluminado no centro, que fica na tela até o fim
-// (sem cortes), e cada benefício aparece como etiqueta ligada ao produto por uma linha. O fundo é a cor principal
+// (sem cortes; com mais fotos, a do círculo troca em fade a cada benefício), e cada benefício aparece como etiqueta ligada ao produto por uma linha. O fundo é a cor principal
 // escurecida; a cor de apoio marca etiquetas, selo de preço e CTA.
 // Linha do tempo (30 fps, 450 frames = 15 s). As etiquetas entram no ritmo da locução.
 const SCENES = { hook: [0, 72], callouts: [84, 221], price: [305, 70], cta: [375, 75] } as const;
@@ -21,7 +21,7 @@ export const ProductAdCallouts: React.FC<ProductAdProps> = ({ copy, product, bra
   return (
     <AbsoluteFill style={{ backgroundColor: mix(color, '#000000', 0.8), color: '#ffffff', fontFamily: `${FONT_FAMILY}, sans-serif` }}>
       <AdAudio audio={audio} cues={audioCues(copy.bullets.length)} />
-      <Stage imageUrl={product.imageUrl} color={color} accent={accent} />
+      <Stage images={productImages(product)} bullets={copy.bullets.length} color={color} accent={accent} />
       <Sequence from={SCENES.hook[0]} durationInFrames={SCENES.hook[1]} name="Hook">
         <HookScene headline={copy.headline} name={product.name} color={accent} duration={SCENES.hook[1]} />
       </Sequence>
@@ -47,8 +47,16 @@ function useOrbit (ctaProgress = 0) {
   return { cx: width / 2, cy: safe.centerY - radius * 0.38 * ctaProgress, radius: radius * (1 - 0.36 * ctaProgress), baseRadius: radius };
 }
 
-// Camada contínua: foto, brilho na cor da marca e anéis girando. Usa o frame global.
-const Stage: React.FC<{ imageUrl: string; color: string; accent: string }> = ({ imageUrl, color, accent }) => {
+// Frame em que cada foto entra no círculo: a principal desde o início e as outras junto com o 2º e o 3º benefício
+// (sem benefícios suficientes, ao longo das etiquetas). A troca é um fade, para o círculo continuar sem cortes.
+const PHOTO_FADE = 12;
+function photoStarts (images: number, bullets: number) {
+  const cues = audioCues(bullets).benefits;
+  return Array.from({ length: images }, (_, index) => index === 0 ? 0 : cues[index] ?? SCENES.callouts[0] + (index * SCENES.callouts[1]) / images);
+}
+
+// Camada contínua: fotos, brilho na cor da marca e anéis girando. Usa o frame global.
+const Stage: React.FC<{ images: string[]; bullets: number; color: string; accent: string }> = ({ images, bullets, color, accent }) => {
   const frame = useCurrentFrame();
   const { fps, width, height, durationInFrames } = useVideoConfig();
   const { unit } = useLayout();
@@ -71,7 +79,12 @@ const Stage: React.FC<{ imageUrl: string; color: string; accent: string }> = ({ 
         position: 'absolute', left: lerp(0, cx - radius), top: lerp(0, cy - radius), width: lerp(width, radius * 2), height: lerp(height, radius * 2),
         borderRadius: lerp(0, radius), overflow: 'hidden', boxShadow: `0 ${30 * unit}px ${90 * unit}px rgba(0,0,0,${0.6 * shrink})`,
       }}>
-        <Img src={imageUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})` }} />
+        {photoStarts(images.length, bullets).map((start, index) => (
+          <Img key={index} src={images[index]} style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})`,
+            opacity: index === 0 ? 1 : interpolate(frame, [start, start + PHOTO_FADE], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
+          }} />
+        ))}
         <AbsoluteFill style={{ opacity: 1 - shrink, background: 'linear-gradient(180deg, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.2) 55%, rgba(0,0,0,0.55) 100%)' }} />
       </div>
     </AbsoluteFill>

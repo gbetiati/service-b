@@ -16,33 +16,43 @@ export const PRODUCT_AD_DIMENSIONS: Record<ProductAdFormat, { width: number; hei
   '16x9': { width: 1920, height: 1080 },
 };
 
-// Templates do anúncio. Todos recebem as mesmas props (ProductAdProps) e têm a mesma duração e os mesmos formatos.
-// - ProductAd: foto em tela cheia, headline sobre degradê e cenas com a foto desfocada.
-// - ProductAdEditorial: estilo revista, fundo na cor principal, foto em cartão e benefícios numerados.
-// - ProductAdKinetic: tipografia em movimento, cortes rápidos e as cores da marca alternando a cada tela.
-// - ProductAdChecklist: benefícios marcados um a um num cartão e fechamento com "toque" no botão de CTA.
-// - ProductAdCallouts: a foto encolhe para um círculo iluminado e os benefícios viram etiquetas ligadas ao produto.
+// Templates de foto do anúncio (video/src/templates/image-templates). Todos recebem as mesmas props (ProductAdProps),
+// têm a mesma duração e os mesmos formatos, mostram a foto e o texto já no primeiro frame e mantêm texto, preço e CTA
+// dentro da área segura do Reels (shared.tsx, useSafeArea).
+// - ProductAdStory: Story de criador, com a foto sempre em tela cheia, headline no texto com fundo da ferramenta do
+//   Instagram, seta e nome escritos à mão, benefícios como stickers e CTA no formato do sticker de link.
+// - ProductAdReveal: headline gigante em letras vazadas com a foto por dentro (text mask), travessia para a foto
+//   inteira, benefícios em tipografia cinética com marca-texto e fechamento com painel de vidro e brilho no CTA.
 // - ProductAdNative: visual nativo de Reels, com câmera na mão, cortes de zoom e legendas no estilo automático.
-// - ProductAdOffer: abre com o preço e o desconto, mostra produto e benefícios e fecha retomando a oferta.
-// - ProductAdMontage: cortes rápidos em detalhes da foto, benefícios em cartões empilhados e a foto inteira no fim.
-// Os templates novos mantêm texto, preço e CTA dentro da área segura do Reels (shared.tsx, useSafeArea).
+// - ProductAdMontage: cortes rápidos em detalhes das fotos, benefícios em cartões empilhados e a foto inteira no fim.
 export const PRODUCT_AD_TEMPLATES = [
-  'ProductAd',
-  'ProductAdEditorial',
-  'ProductAdKinetic',
-  'ProductAdChecklist',
-  'ProductAdCallouts',
+  'ProductAdStory',
+  'ProductAdReveal',
   'ProductAdNative',
-  'ProductAdOffer',
   'ProductAdMontage',
 ] as const;
 
 export type ProductAdTemplate = (typeof PRODUCT_AD_TEMPLATES)[number];
 
+// Templates com vídeos reais (conteúdos VIDEO), em video/src/templates/video-templates. Recebem VideoAdProps e têm a
+// mesma duração e os mesmos formatos. Todos abrem com movimento e texto já no frame 0 (o gancho decide se a pessoa
+// fica) e mostram a marca nos primeiros segundos.
+// - VideoAdResultFirst: abre no resultado (o fim do último clipe, onde costuma estar o trabalho pronto) com a headline
+//   em impacto, volta ao processo com os benefícios e fecha no resultado de novo, com o CTA.
+// - VideoAdOneTake: o serviço numa tomada contínua, em velocidade real e sem cortes (o formato "satisfatório" dos vídeos
+//   de limpeza que viralizam), com o texto em caixas no estilo nativo do Reels e o CTA sobre a mesma tomada.
+// - VideoAdCaptions: visual nativo de Reels, com cortes a cada 1,5 s, legendas palavra a palavra no estilo automático,
+//   e a headline como pergunta em adesivo no primeiro segundo.
+export const VIDEO_AD_TEMPLATES = ['VideoAdResultFirst', 'VideoAdOneTake', 'VideoAdCaptions'] as const;
+
+export type VideoAdTemplate = (typeof VIDEO_AD_TEMPLATES)[number];
+
+export type AdTemplate = ProductAdTemplate | VideoAdTemplate;
+
 // Faixas da música de fundo, em video/public/music/<faixa>.mp3. As atuais são placeholders gerados para teste:
 // substitua por faixas com licença de uso comercial em anúncios e atualize esta lista.
 export const PRODUCT_AD_MUSIC_TRACKS = ['placeholder-pulse', 'placeholder-warm'] as const;
 
-export function productAdCompositionId (format: ProductAdFormat, template: ProductAdTemplate = 'ProductAd') {
+export function productAdCompositionId (format: ProductAdFormat, template: AdTemplate = PRODUCT_AD_TEMPLATES[0]) {
   return `${template}-${format}`;
 }

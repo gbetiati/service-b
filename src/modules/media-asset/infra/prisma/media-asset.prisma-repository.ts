@@ -3,6 +3,7 @@ import type { MediaAsset as Row } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { MediaAsset } from '../../domain/entities/media-asset.entity';
+import { MediaAssetKind } from '../../domain/entities/media-asset-kind';
 import { MediaAssetRepository } from '../../domain/repositories/media-asset.repository';
 
 @Injectable()
@@ -26,7 +27,12 @@ export class PrismaMediaAssetRepository implements MediaAssetRepository {
     return rows.map(row => this.toDomain(row));
   }
 
+  async updateKind (id: string, kind: MediaAssetKind) {
+    const { count } = await this.prismaService.mediaAsset.updateMany({ where: { id, companyId: this.requestContext.companyId }, data: { kind } });
+    return count ? this.findById(id) : null;
+  }
+
   private toDomain (row: Row) {
-    return new MediaAsset(row.id, row.companyId, row.productId, row.storageKey, row.contentType, row.bytes, row.createdAt, row.updatedAt);
+    return new MediaAsset(row.id, row.companyId, row.productId, row.storageKey, row.contentType, row.bytes, row.createdAt, row.updatedAt, MediaAssetKind[row.kind]);
   }
 }

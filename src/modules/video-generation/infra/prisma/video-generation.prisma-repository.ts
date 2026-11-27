@@ -220,8 +220,8 @@ export class PrismaVideoGenerationRepository implements VideoGenerationRepositor
   }
 }
 
-// Gerações salvas antes da renomeação guardaram o contexto do roteiro na chave `brief`.
+// Gerações salvas antes das renomeações guardaram o contexto do roteiro na chave `brief` e as fotos em `imageKeys`.
 export function renderInput (stored: unknown): RenderInput {
-  const { brief, ...input } = stored as RenderInput & { brief?: RenderInput['context'] };
-  return { ...input, context: input.context ?? brief! };
+  const { brief, imageKeys, ...input } = stored as RenderInput & { brief?: RenderInput['context']; imageKeys?: string[] };
+  return { ...input, mediaKeys: input.mediaKeys ?? imageKeys ?? [], context: input.context ?? brief! };
 }

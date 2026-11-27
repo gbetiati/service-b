@@ -86,6 +86,9 @@ test('VoiceClipTools reads the pauses from FFmpeg and cuts a range of the take',
   assert.equal(calls[2].includes('-to'), false, 'the last scene runs to the end of the take');
   await tools.tighten('/tmp/raw.wav', '/tmp/clip.mp3');
   assert.equal(calls[3].includes('-ss'), false);
+  assert.ok(calls[3][calls[3].indexOf('-af') + 1].includes('atempo=1.1'), 'default speed-up, calibrated for OpenAI');
+  await tools.tighten('/tmp/raw.mp3', '/tmp/clip.mp3', undefined, 1);
+  assert.equal(calls[4][calls[4].indexOf('-af') + 1].includes('atempo'), false, 'tempo 1 keeps the natural speed');
 
   tools.execute = async () => { throw Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' }); };
   await assert.rejects(tools.silences('/tmp/take.wav'), error => error instanceof AppError && error.kind === 'unavailable');

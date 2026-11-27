@@ -1,10 +1,11 @@
 import React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, ProductImage, SafeArea, fitFontSize, optionalColor, readableOn, safeColor, splitWords, inkOnWhite, useEnter, useLayout, useSafeArea } from './shared';
-import { AdAudio, AudioCues } from './audio';
+import type { ProductAdProps } from '../../../../src/modules/video-generation/domain/entities/product-ad';
+import { LOGO_BUG_SPACE, LogoBadge, LogoBug, imageAt, productImages, FONT_FAMILY, ProductImage, SafeArea, fitFontSize, optionalColor, readableOn, safeColor, splitWords, inkOnWhite, useEnter, useLayout, useSafeArea } from '../shared';
+import { AdAudio, AudioCues } from '../audio';
 
-// Montagem rápida: cortes no ritmo da headline mostrando detalhes da foto (recortes com zoom e flash a cada corte),
+// Montagem rápida: cortes no ritmo da headline mostrando detalhes das fotos (recortes com zoom e flash a cada corte,
+// passando pelas fotos do conteúdo),
 // benefícios em cartões empilhados e, só então, a foto inteira com nome e preço, a recompensa da curiosidade.
 // Linha do tempo (30 fps, 450 frames = 15 s). Cada cartão fica na tela o tempo de uma fala.
 const SCENES = { hook: [0, 75], cards: [75, 225], reveal: [300, 60], cta: [360, 90] } as const;
@@ -28,17 +29,18 @@ export const ProductAdMontage: React.FC<ProductAdProps> = ({ copy, product, bran
     <AbsoluteFill style={{ backgroundColor: '#000000', color: '#ffffff', fontFamily: `${FONT_FAMILY}, sans-serif` }}>
       <AdAudio audio={audio} cues={audioCues(copy.bullets.length)} />
       <Sequence from={SCENES.hook[0]} durationInFrames={SCENES.hook[1]} name="Hook">
-        <HookScene imageUrl={product.imageUrl} headline={copy.headline} colors={[color, accent]} />
+        <HookScene images={productImages(product)} headline={copy.headline} colors={[color, accent]} logo={!!brand.logoUrl} />
       </Sequence>
       <Sequence from={SCENES.cards[0]} durationInFrames={SCENES.cards[1]} name="Cards">
-        <CardsScene imageUrl={product.imageUrl} bullets={copy.bullets} color={color} card={card} duration={SCENES.cards[1]} />
+        <CardsScene images={productImages(product)} bullets={copy.bullets} color={color} card={card} duration={SCENES.cards[1]} />
       </Sequence>
       <Sequence from={SCENES.reveal[0]} durationInFrames={SCENES.reveal[1]} name="Reveal">
-        <RevealScene imageUrl={product.imageUrl} name={product.name} price={product.price} oldPrice={product.oldPrice} color={accent} />
+        <RevealScene imageUrl={imageAt(product, 0)} name={product.name} price={product.price} oldPrice={product.oldPrice} color={accent} />
       </Sequence>
       <Sequence from={SCENES.cta[0]} durationInFrames={SCENES.cta[1]} name="CTA">
-        <CtaScene imageUrl={product.imageUrl} cta={copy.cta} logoUrl={brand.logoUrl} color={color} accent={accent} />
+        <CtaScene images={productImages(product)} cta={copy.cta} logoUrl={brand.logoUrl} color={color} accent={accent} />
       </Sequence>
+      <LogoBug logoUrl={brand.logoUrl} />
     </AbsoluteFill>
   );
 };
@@ -56,7 +58,8 @@ const Flash: React.FC<{ since: number; strength?: number }> = ({ since, strength
 
 // Um corte por palavra: a headline inteira já ocupa seu lugar (o layout não pula) e cada palavra acende no seu corte,
 // com a atual destacada na cor da marca.
-const HookScene: React.FC<{ imageUrl: string; headline: string; colors: [string, string] }> = ({ imageUrl, headline, colors }) => {
+const HookScene: React.FC<{ images: string[]; headline: string; colors: [string, string]; logo: boolean }> = ({ images, headline, colors, logo }) => {
+  const safe = useSafeArea();
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const { unit, landscape } = useLayout();
@@ -69,10 +72,10 @@ const HookScene: React.FC<{ imageUrl: string; headline: string; colors: [string,
 
   return (
     <AbsoluteFill>
-      <CropImage imageUrl={imageUrl} crop={crop} extra={punch} style={{ position: 'absolute', inset: 0 }} />
+      <CropImage imageUrl={images[Math.max(0, index) % images.length]} crop={crop} extra={punch} style={{ position: 'absolute', inset: 0 }} />
       <AbsoluteFill style={{ backgroundColor: 'rgba(0,0,0,0.42)' }} />
       {index > 0 && <Flash since={local} />}
-      <SafeArea style={{ justifyContent: 'center', alignItems: 'center' }}>
+      <SafeArea style={{ justifyContent: 'center', alignItems: 'center', paddingTop: safe.top + (logo ? LOGO_BUG_SPACE * unit : 0) }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', columnGap: 22 * unit, rowGap: 12 * unit, maxWidth: landscape ? '75%' : '100%', fontSize: Math.max(72, fitFontSize(headline, landscape ? 100 : 104, 30)) * unit, fontWeight: 900, lineHeight: 1.02, letterSpacing: -2 * unit, textTransform: 'uppercase', textAlign: 'center' }}>
           {words.map((word, position) => {
             const shown = position <= index;
@@ -93,7 +96,7 @@ const HookScene: React.FC<{ imageUrl: string; headline: string; colors: [string,
 
 // Cartões empilhados: cada benefício entra pela direita e empurra os anteriores para trás. Cada cartão traz um
 // recorte diferente da foto.
-const CardsScene: React.FC<{ imageUrl: string; bullets: string[]; color: string; card: string; duration: number }> = ({ imageUrl, bullets, color, card, duration }) => {
+const CardsScene: React.FC<{ images: string[]; bullets: string[]; color: string; card: string; duration: number }> = ({ images, bullets, color, card, duration }) => {
   const frame = useCurrentFrame();
   const { fps, width } = useVideoConfig();
   const { unit, landscape, portrait } = useLayout();
@@ -106,7 +109,7 @@ const CardsScene: React.FC<{ imageUrl: string; bullets: string[]; color: string;
 
   return (
     <AbsoluteFill style={{ opacity: exit }}>
-      <ProductImage imageUrl={imageUrl} zoom={1.3} blur={24 * unit} />
+      <ProductImage imageUrl={images[0]} zoom={1.3} blur={24 * unit} />
       <AbsoluteFill style={{ backgroundColor: color, opacity: 0.82 }} />
       <AbsoluteFill style={{ top: safe.top, height: safe.height, alignItems: 'center', justifyContent: 'center' }}>
         {bullets.map((bullet, index) => {
@@ -119,7 +122,7 @@ const CardsScene: React.FC<{ imageUrl: string; bullets: string[]; color: string;
               transform: `translateX(${(1 - enters[index]) * width}px) translateY(${-depth * 46 * unit}px) scale(${1 - depth * 0.07}) rotate(${(1 - enters[index]) * 8}deg)`,
               filter: `brightness(${1 - depth * 0.18})`, opacity: Math.min(1, (2.6 - depth) * 1.5),
             }}>
-              <CropImage imageUrl={imageUrl} crop={CROPS[(index + 1) % CROPS.length]} style={{ flex: '1 1 0', minHeight: 0 }} />
+              <CropImage imageUrl={images[(index + 1) % images.length]} crop={CROPS[(index + 1) % CROPS.length]} style={{ flex: '1 1 0', minHeight: 0 }} />
               <div style={{ padding: `${36 * unit}px ${44 * unit}px ${44 * unit}px`, display: 'flex', flexDirection: 'column', gap: 12 * unit }}>
                 <div style={{ fontSize: 34 * unit, fontWeight: 900, color: card === '#ffffff' ? inkOnWhite(color) : readableOn(card), opacity: card === '#ffffff' ? 1 : 0.7, letterSpacing: 2 * unit }}>{String(index + 1).padStart(2, '0')}</div>
                 <div style={{ fontSize: (portrait ? 58 : 48) * unit, fontWeight: 900, lineHeight: 1.08, letterSpacing: -1 * unit }}>{bullet}</div>
@@ -159,7 +162,7 @@ const RevealScene: React.FC<{ imageUrl: string; name: string; price?: string; ol
 };
 
 // CTA sobre a cor da marca, com uma faixa de recortes da foto correndo como filme.
-const CtaScene: React.FC<{ imageUrl: string; cta: string; logoUrl?: string; color: string; accent: string }> = ({ imageUrl, cta, logoUrl, color, accent }) => {
+const CtaScene: React.FC<{ images: string[]; cta: string; logoUrl?: string; color: string; accent: string }> = ({ images, cta, logoUrl, color, accent }) => {
   const frame = useCurrentFrame();
   const { unit } = useLayout();
   const safe = useSafeArea();
@@ -173,11 +176,11 @@ const CtaScene: React.FC<{ imageUrl: string; cta: string; logoUrl?: string; colo
     <AbsoluteFill style={{ backgroundColor: color, clipPath: `circle(${reveal * 1.5}% at 50% 50%)` }}>
       <div style={{ position: 'absolute', top: safe.top, left: 0, display: 'flex', gap, transform: `translateX(${-offset}px) rotate(-3deg)` }}>
         {[...CROPS, ...CROPS, ...CROPS, ...CROPS].map((crop, index) => (
-          <CropImage key={index} imageUrl={imageUrl} crop={crop} style={{ width: tile, height: tile, borderRadius: 26 * unit, flexShrink: 0, border: `${6 * unit}px solid ${accent === color ? readableOn(color) : accent}` }} />
+          <CropImage key={index} imageUrl={images[index % images.length]} crop={crop} style={{ width: tile, height: tile, borderRadius: 26 * unit, flexShrink: 0, border: `${6 * unit}px solid ${accent === color ? readableOn(color) : accent}` }} />
         ))}
       </div>
-      <AbsoluteFill style={{ top: safe.top + tile + 40 * unit, bottom: safe.bottom, left: safe.left, right: safe.right, width: 'auto', height: 'auto', alignItems: 'center', justifyContent: 'center', gap: 40 * unit }}>
-        {logoUrl && <Img src={logoUrl} style={{ maxWidth: 260 * unit, maxHeight: 100 * unit, objectFit: 'contain', opacity: enter }} />}
+      <AbsoluteFill style={{ top: safe.top + tile + 80 * unit, bottom: safe.bottom, left: safe.left, right: safe.right, width: 'auto', height: 'auto', alignItems: 'center', justifyContent: 'center', gap: 40 * unit }}>
+        {logoUrl && <LogoBadge logoUrl={logoUrl} height={130} style={{ opacity: enter }} />}
         <div style={{
           backgroundColor: accent === color ? readableOn(color) : accent, color: accent === color ? color : readableOn(accent), fontSize: 76 * unit, fontWeight: 900, textTransform: 'uppercase', letterSpacing: -1 * unit, textAlign: 'center',
           padding: `${28 * unit}px ${64 * unit}px`, borderRadius: 24 * unit, transform: `scale(${enter * (1 + Math.sin(frame / 5) * 0.025)}) rotate(${(1 - enter) * -8}deg)`,

@@ -6,6 +6,7 @@ import { RequestContext } from '@/shared/core/request-context/request-context';
 import { ContentMapper } from '../../application/mappers/content.mapper';
 import { Content, Editorial } from '../../domain/entities/content.entity';
 import { ContentAsset } from '../../domain/entities/content-asset.entity';
+import { ContentMediaType } from '../../domain/entities/content-media-type';
 import { ContentStatus } from '../../domain/entities/content-status';
 import { ContentListFilters, ContentRepository } from '../../domain/repositories/content.repository';
 
@@ -14,7 +15,7 @@ const include = {
 } satisfies Prisma.ContentInclude;
 type Row = Prisma.ContentGetPayload<{ include: typeof include }>;
 const referencedBrandFields = {
-  name: true, primaryColor: true, secondaryColor: true, tertiaryColor: true, quaternaryColor: true, voiceTone: true, targetAudience: true, copyGuidelines: true,
+  name: true, primaryColor: true, secondaryColor: true, tertiaryColor: true, quaternaryColor: true, voiceTone: true, targetAudience: true, copyGuidelines: true, logoStorageKey: true,
 } as const;
 
 @Injectable()
@@ -41,7 +42,7 @@ export class PrismaContentRepository implements ContentRepository {
     return this.prismaService.serializable(async tx => {
       const updated = await tx.content.updateMany({
         where: { companyId, id, revision: revision - 1 }, data: {
-          ...this.fields(content), revision, status: 'WAITING', videoStatus: 'NOT_STARTED',
+          ...this.fields(content), revision, status: 'WAITING', humanApprove: null, videoStatus: 'NOT_STARTED',
           transcriptionStatus: 'NOT_STARTED', transcriptionSubmissionId: null, transcription: null,
           subtitleSrt: null, subtitleStatus: 'NOT_STARTED', subtitleLeaseUntil: null, publicationPreparationRequested,
         },
@@ -76,11 +77,17 @@ export class PrismaContentRepository implements ContentRepository {
     return row && this.toDomain(row);
   }
 
+  async setHumanApproval (id: string, revision: number, approved: boolean) {
+    const companyId = this.requestContext.companyId;
+    const updated = await this.prismaService.content.updateMany({ where: { companyId, id, revision }, data: { humanApprove: approved } });
+    return updated.count ? this.findById(id) : null;
+  }
+
   async findReferences (content: Content) {
     const companyId = this.requestContext.companyId;
     const { campaingId, campaingRulesId, assets } = content.fields;
     const productIds = content.allProductIds;
-    const [campaign, rule, products, images] = await Promise.all([
+    const [campaign, rule, products, media] = await Promise.all([
       this.prismaService.campaign.findUnique({
         where: { companyId_id: { companyId, id: campaingId } },
         select: { brandId: true, objective: true, brand: { select: referencedBrandFields } },
@@ -94,12 +101,12 @@ export class PrismaContentRepository implements ContentRepository {
         select: { id: true, brandId: true, name: true, description: true },
       }),
       this.prismaService.mediaAsset.findMany({
-        where: { companyId, id: { in: assets.map(asset => asset.mediaAssetId) }, contentType: { startsWith: 'image/' } },
-        select: { id: true, productId: true, storageKey: true },
+        where: { companyId, id: { in: assets.map(asset => asset.mediaAssetId) } },
+        select: { id: true, productId: true, storageKey: true, contentType: true, kind: true },
       }),
     ]);
 
-    return { campaign, rule, products, images };
+    return { campaign, rule, products, media };
   }
 
   async findAll (skip: number, take: number, { search, productId, status }: ContentListFilters = {}) {
@@ -142,8 +149,8 @@ export class PrismaContentRepository implements ContentRepository {
   }
 
   private fields (content: Content) {
-    const { aiScript, editorial, audio, campaingId, campaingRulesId, productId } = content.fields;
-    return { aiScript, editorial, ...audio, campaingId, campaingRulesId, productId, scriptStatus: Content.scriptStatusFor(aiScript) };
+    const { aiScript, editorial, audio, contentMediaType, campaingId, campaingRulesId, productId } = content.fields;
+    return { aiScript, editorial, ...audio, contentMediaType, campaingId, campaingRulesId, productId, scriptStatus: Content.scriptStatusFor(aiScript) };
   }
 
   private relations (content: Content) {
@@ -162,11 +169,12 @@ export class PrismaContentRepository implements ContentRepository {
   }
 
   private toDomain (row: Row) {
-    const { id, companyId, campaingId, campaingRulesId, productId, aiScript, editorial, backgroundMusic, voiceover, status, revision, createdAt, updatedAt } = row;
+    const { id, companyId, campaingId, campaingRulesId, productId, aiScript, editorial, backgroundMusic, voiceover, contentMediaType, status, revision, createdAt, updatedAt } = row;
     return new Content(id, companyId, {
       campaingId, campaingRulesId, productId, aiScript, editorial: editorial as Editorial, audio: { backgroundMusic, voiceover },
+      contentMediaType: ContentMediaType[contentMediaType],
       assets: row.assets.map(asset => new ContentAsset(asset.position, asset.mediaAssetId)),
       productIds: row.products.map(product => product.productId),
-    }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus, row.transcriptionStatus, row.transcription, row.subtitleStatus);
+    }, revision, ContentStatus[status], createdAt, updatedAt, row.scriptStatus, row.videoStatus, row.transcriptionStatus, row.transcription, row.subtitleStatus, row.humanApprove);
   }
 }

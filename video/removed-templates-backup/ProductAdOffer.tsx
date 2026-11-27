@@ -1,8 +1,8 @@
 import React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, ProductImage, benefitGap, fitFontSize, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout, useSafeArea } from './shared';
-import { AdAudio, AudioCues } from './audio';
+import type { ProductAdProps } from '../../../../src/modules/video-generation/domain/entities/product-ad';
+import { imageAt, FONT_FAMILY, ProductImage, benefitGap, fitFontSize, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout, useSafeArea } from '../shared';
+import { AdAudio, AudioCues } from '../audio';
 
 // Oferta primeiro: o vídeo abre com o preço (e o desconto, se houver preço antigo), mostra o produto, os benefícios em
 // faixas rápidas e fecha retomando o preço junto do CTA. Sem preço cadastrado, a headline ocupa o lugar da oferta.
@@ -26,13 +26,13 @@ export const ProductAdOffer: React.FC<ProductAdProps> = ({ copy, product, brand,
         <OfferScene name={product.name} headline={copy.headline} price={product.price} oldPrice={product.oldPrice} discount={discount} color={color} accent={accent} tape={tape} />
       </Sequence>
       <Sequence from={SCENES.product[0]} durationInFrames={SCENES.product[1]} name="Product">
-        <ProductScene imageUrl={product.imageUrl} text={product.price ? copy.headline : product.name} accent={accent} />
+        <ProductScene imageUrl={imageAt(product, 0)} text={product.price ? copy.headline : product.name} accent={accent} />
       </Sequence>
       <Sequence from={SCENES.benefits[0]} durationInFrames={SCENES.benefits[1]} name="Benefits">
-        <BenefitsScene imageUrl={product.imageUrl} bullets={copy.bullets} color={color} accent={accent} />
+        <BenefitsScene imageUrl={imageAt(product, 1)} bullets={copy.bullets} color={color} accent={accent} />
       </Sequence>
       <Sequence from={SCENES.close[0]} durationInFrames={SCENES.close[1]} name="Close">
-        <CloseScene imageUrl={product.imageUrl} price={product.price} oldPrice={product.oldPrice} discount={discount} cta={copy.cta} logoUrl={brand.logoUrl} color={color} accent={accent} tape={tape} />
+        <CloseScene imageUrl={imageAt(product, 2)} price={product.price} oldPrice={product.oldPrice} discount={discount} cta={copy.cta} logoUrl={brand.logoUrl} color={color} accent={accent} tape={tape} />
       </Sequence>
     </AbsoluteFill>
   );

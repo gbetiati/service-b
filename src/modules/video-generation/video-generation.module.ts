@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StorageModule } from '@/shared/libs/storage/storage.module';
 import { ContentModule } from '../content/content.module';
 import { ProductModule } from '../product/product.module';
+import { ImageTemplateModule } from '../image-template/image-template.module';
 import { CompleteScriptGenerationUseCase } from './application/use-cases/complete-script-generation.usecase';
 import { CompleteVideoGenerationUseCase } from './application/use-cases/complete-video-generation.usecase';
 import { GenerateVideoUseCase } from './application/use-cases/generate-video.usecase';
@@ -19,6 +20,7 @@ import { PrismaVideoGenerationRepository } from './infra/prisma/video-generation
 // TESTE (mock): reative junto com o binding do Claude abaixo.
 // import { ClaudeCopyWriterProvider } from './infra/providers/claude-copy-writer.provider';
 import { MockCopyWriterProvider } from './infra/providers/mock-copy-writer.provider';
+import { ElevenLabsSpeechProvider } from './infra/providers/elevenlabs-speech.provider';
 import { OpenAiSpeechProvider } from './infra/providers/openai-speech.provider';
 import { OpenAiTranscriptionProvider } from './infra/providers/openai-transcription.provider';
 import { RemotionVideoProvider } from './infra/providers/remotion.provider';
@@ -28,6 +30,12 @@ import { RemotionWebhookClient } from './infra/remotion/remotion-webhook.client'
 import { RemotionSettings } from './infra/remotion/remotion.settings';
 import { RenderSemaphore } from './infra/remotion/render-semaphore';
 
+// Serviço da locução, escolhido por SPEECH_PROVIDER: "elevenlabs" ou "openai" (padrão). Os dois devolvem WAV e passam
+// pelo mesmo corte e mixagem, então dá para comparar as vozes gerando o mesmo conteúdo com cada um.
+function speechProvider (config: ConfigService, openai: OpenAiSpeechProvider, elevenlabs: ElevenLabsSpeechProvider): SpeechProvider {
+  return config.get<string>('SPEECH_PROVIDER')?.trim().toLowerCase() === 'elevenlabs' ? elevenlabs : openai;
+}
+
 // O vídeo é montado pelo Remotion. A aplicação não sobe sem a configuração dele.
 function remotionVideoProvider (remotion: RemotionVideoProvider): VideoProvider {
   remotion.assertConfigured();
@@ -35,13 +43,14 @@ function remotionVideoProvider (remotion: RemotionVideoProvider): VideoProvider 
 }
 
 @Module({
-  imports: [ConfigModule, ContentModule, ProductModule, StorageModule],
+  imports: [ConfigModule, ContentModule, ProductModule, StorageModule, ImageTemplateModule],
   controllers: [VideoGenerationController, RemotionWebhookController, ClaudeScriptWebhookController],
   providers: [
     GenerateVideoUseCase, GetVideoGenerationStatusUseCase, CompleteScriptGenerationUseCase, CompleteVideoGenerationUseCase,
     RemotionVideoProvider, RemotionCliRenderer, RemotionWebhookClient, VoiceClipTools,
     // Locução dos anúncios (TTS). Só é chamada quando o conteúdo pede voz.
-    { provide: SpeechProvider, useClass: OpenAiSpeechProvider },
+    OpenAiSpeechProvider, ElevenLabsSpeechProvider,
+    { provide: SpeechProvider, inject: [ConfigService, OpenAiSpeechProvider, ElevenLabsSpeechProvider], useFactory: speechProvider },
     // Confere a locução gravada numa tomada só e acha onde cortar cada trecho.
     { provide: TranscriptionProvider, useClass: OpenAiTranscriptionProvider },
     { provide: VideoGenerationRepository, useClass: PrismaVideoGenerationRepository },

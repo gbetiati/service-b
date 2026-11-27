@@ -12,6 +12,9 @@ export abstract class ContentRepository {
 
   abstract findById (id: string): Promise<Content | null>;
 
+  // Grava a revisão humana na revisão informada; devolve null se o conteúdo mudou de revisão nesse meio-tempo.
+  abstract setHumanApproval (id: string, revision: number, approved: boolean): Promise<Content | null>;
+
   abstract findReferences (content: Content): Promise<ContentReferences>;
 
   abstract findAll (offset: number, limit: number, filters?: ContentListFilters): Promise<Content[]>;

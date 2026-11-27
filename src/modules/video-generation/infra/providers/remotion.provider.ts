@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { Injectable, Logger } from '@nestjs/common';
 // TESTE (mock): reative junto com as validações de configuração.
@@ -12,7 +12,8 @@ import { Random, seededRandom } from '@/shared/core/random';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
 import { parseAdScript } from '@/modules/content/domain/entities/ad-script';
 import type { ScriptContext } from '@/modules/content/domain/providers/script.provider';
-import { ProductAdAudio, ProductAdCopy, ProductAdPolicy, ProductAdVoiceClip } from '../../domain/entities/product-ad';
+import { ContentMediaType } from '@/modules/content/domain/entities/content-media-type';
+import { AdImage, AdImageKind, AdVideoClip, ProductAdAudio, ProductAdCopy, ProductAdPolicy, ProductAdVoiceClip } from '../../domain/entities/product-ad';
 import { alignVoiceLines } from '../../domain/entities/voice-alignment';
 import type { RenderBrand, RenderProduct } from '../../domain/entities/video-generation.entity';
 import { CopyContext, CopyWriterProvider } from '../../domain/providers/copy-writer.provider';
@@ -20,8 +21,8 @@ import { SpeechProvider } from '../../domain/providers/speech.provider';
 import { TranscriptionProvider } from '../../domain/providers/transcription.provider';
 import { RenderRequest, VideoProvider } from '../../domain/providers/video.provider';
 import type { ContentAudio } from '@/modules/content/domain/entities/content.entity';
-import { VoiceClipTools } from '../remotion/voice-clip.tools';
-import { PRODUCT_AD_MUSIC_TRACKS, PRODUCT_AD_TEMPLATES, productAdCompositionId } from '../remotion/product-ad.compositions';
+import { VOICE_TEMPO, VoiceClipTools } from '../remotion/voice-clip.tools';
+import { AdTemplate, PRODUCT_AD_MUSIC_TRACKS, PRODUCT_AD_TEMPLATES, VIDEO_AD_TEMPLATES, productAdCompositionId } from '../remotion/product-ad.compositions';
 import { RemotionCliRenderer } from '../remotion/remotion-cli.renderer';
 import { RemotionRenderEvent, RemotionWebhookClient } from '../remotion/remotion-webhook.client';
 import { RemotionSettings } from '../remotion/remotion.settings';
@@ -41,7 +42,12 @@ const TAKE_ATTEMPTS = 2;
 // Reels do Instagram.
 const format = '9x16';
 
-type AdSource = { script: string; context: ScriptContext; product: RenderProduct; brand: RenderBrand; imageUrl: string; audio?: ContentAudio };
+// `media`: as fotos com o tipo de cada uma (conteúdo IMAGE) ou os vídeos (conteúdo VIDEO), na ordem escolhida.
+// `imageSlots`: tipo de foto preferido em cada cena, por template de foto (configuração da empresa).
+type AdSource = {
+  script: string; context: ScriptContext; product: RenderProduct; brand: RenderBrand; logoUrl?: string; audio?: ContentAudio;
+  media: { type: ContentMediaType; urls: string[]; images: AdImage[] }; imageSlots?: Partial<Record<string, AdImageKind[]>>; template?: string;
+};
 type Voiceover = { clips: NonNullable<ProductAdAudio['voiceover']>; keys: string[]; transcript: string };
 
 // Monta o anúncio do produto: o Claude escreve a copy, o Remotion renderiza localmente e o MP4 vai para o storage.
@@ -75,17 +81,20 @@ export class RemotionVideoProvider implements VideoProvider {
     // requiredEnv('ANTHROPIC_API_KEY');
   }
 
-  async render ({ submissionId, script, imageUrls, brand, context, product, audio }: RenderRequest) {
+  async render ({ submissionId, script, mediaUrls, mediaKinds, imageSlots, mediaType, template, brand, logoUrl, context, product, audio }: RenderRequest) {
     // TESTE (mock): validação comentada.
     // requiredEnv('REMOTION_WEBHOOK_SECRET');
 
     if (!product) throw new AppError('invalid', 'A geração não tem os dados do produto. Solicite um novo vídeo.');
 
-    if (!imageUrls.length) throw new AppError('invalid', 'Associe ao menos uma foto real do produto ao conteúdo.');
+    const video = mediaType === ContentMediaType.VIDEO;
+
+    if (!mediaUrls.length) throw new AppError('invalid', `Associe ao menos ${video ? 'um vídeo real' : 'uma foto real'} do produto ao conteúdo.`);
 
     const providerId = providerPrefix + randomUUID();
     setImmediate(() => {
-      this.process(submissionId, providerId, { script, context, product, brand, imageUrl: imageUrls[0], audio })
+      const images = video ? [] : mediaUrls.map((url, index) => ({ url, kind: mediaKinds?.[index] }));
+      this.process(submissionId, providerId, { script, context, product, brand, logoUrl, media: { type: mediaType, urls: mediaUrls, images }, imageSlots, template, audio })
         .catch(error => this.logger.error(`Falha inesperada no render do Remotion. providerId=${providerId} erro=${describe(error)}`));
     });
     return providerId;
@@ -122,13 +131,20 @@ export class RemotionVideoProvider implements VideoProvider {
   }
 
   private async produce (providerId: string, source: AdSource) {
-    const { product, brand, imageUrl, context } = source;
+    const { product, brand, media, context } = source;
+    const video = media.type === ContentMediaType.VIDEO;
     const copy = this.validateCopy(await this.adCopy(source));
+    // Os vídeos são medidos antes da locução: um arquivo ilegível falha cedo, sem gastar TTS.
+    const clips = video ? await this.measureClips(media.urls) : [];
     const palette = ProductAdPolicy.pickPalette(brand, this.randomFor(providerId));
     // Sorteio separado do das cores, para a paleta de um render continuar a mesma com qualquer lista de templates.
-    const template = PRODUCT_AD_TEMPLATES[Math.floor(this.randomFor(providerId + ':template')() * PRODUCT_AD_TEMPLATES.length)];
+    // O template escolhido na geração vale quando é do tipo do conteúdo; senão, sorteia entre os desse tipo.
+    const templates: readonly AdTemplate[] = video ? VIDEO_AD_TEMPLATES : PRODUCT_AD_TEMPLATES;
+    const chosen = templates.find(name => name === source.template);
+    const template = chosen ?? templates[Math.floor(this.randomFor(providerId + ':template')() * templates.length)];
     const musicTrack = source.audio?.backgroundMusic ? PRODUCT_AD_MUSIC_TRACKS[Math.floor(this.randomFor(providerId + ':music')() * PRODUCT_AD_MUSIC_TRACKS.length)] : undefined;
-    this.logger.log(`Variação do anúncio. providerId=${providerId} template=${template} principal=${palette.primaryColor ?? 'padrão'} secundária=${palette.secondaryColor ?? 'nenhuma'} música=${musicTrack ?? 'não'} locução=${source.audio?.voiceover ? 'sim' : 'não'}`);
+    const slots = video ? undefined : source.imageSlots?.[template];
+    this.logger.log(`Variação do anúncio. providerId=${providerId} mídia=${video ? `vídeo (${clips.length} clipes)` : `foto (cenas: ${slots?.join('/') ?? 'ordem do conteúdo'})`} template=${template} principal=${palette.primaryColor ?? 'padrão'} secundária=${palette.secondaryColor ?? 'nenhuma'} música=${musicTrack ?? 'não'} locução=${source.audio?.voiceover ? 'sim' : 'não'}`);
     // Sem cor principal cadastrada, usa a cor padrão configurada (REMOTION_PRIMARY_COLOR).
     const primaryColor = palette.primaryColor ?? this.settings.primaryColor;
     const storageKey = this.outputKey(providerId);
@@ -137,7 +153,10 @@ export class RemotionVideoProvider implements VideoProvider {
       const voiceover = source.audio?.voiceover ? await this.voiceover(providerId, copy, context.voiceTone, directory) : undefined;
       try {
         const audio: ProductAdAudio = { ...(musicTrack && { musicTrack }), ...(voiceover && { voiceover: voiceover.clips }) };
-        const props = ProductAdPolicy.buildProps({ product, copy, imageUrl, primaryColor, secondaryColor: palette.secondaryColor, audio });
+        const colors = { primaryColor, secondaryColor: palette.secondaryColor, ...(source.logoUrl && { logoUrl: source.logoUrl }) };
+        const props = video
+          ? ProductAdPolicy.buildVideoProps({ product, copy, clips, brandName: brand.name, ...colors, audio })
+          : ProductAdPolicy.buildProps({ product, copy, imageUrls: ProductAdPolicy.arrangeImages(media.images, source.imageSlots?.[template]), ...colors, audio });
         await this.semaphore.run(async () => {
           const outputPath = join(directory, 'output.mp4');
           await this.renderer.render({ compositionId: productAdCompositionId(format, template), props, outputPath, timeoutMs: this.settings.renderTimeoutMs });
@@ -155,15 +174,17 @@ export class RemotionVideoProvider implements VideoProvider {
     });
   }
 
+  // Duração de cada vídeo do conteúdo, lida do próprio arquivo no storage pela URL assinada.
+  private measureClips (urls: string[]): Promise<AdVideoClip[]> {
+    return Promise.all(urls.map(async src => ({ src, durationInSeconds: await this.voiceClips.videoSeconds(src) })));
+  }
+
   // Locução do roteiro: um clipe por trecho (gancho, cada benefício e chamada), para o template começar cada fala
   // quando o texto correspondente aparece. Cada clipe é medido e publicado no bucket com URL assinada para o render.
   private async voiceover (providerId: string, copy: ProductAdCopy, voiceTone: string | undefined, directory: string): Promise<Voiceover> {
     const lines = [copy.headline, ...copy.bullets, copy.cta];
     const style = voiceTone ? { style: voiceTone } : {};
-    const paths = await this.recordCheckedTake(providerId, lines, style, directory).catch(error => {
-      this.logger.warn(`Locução em tomada única descartada; gravando trecho a trecho. providerId=${providerId} motivo=${describe(error)}`);
-      return this.recordLines(lines, style, directory);
-    });
+    const paths = await this.recordVoice(providerId, lines, style, directory);
     const id = providerId.slice(providerPrefix.length);
     const keys = lines.map((_, index) => `${outputPrefix}${id}-voice-${index}.mp3`);
     // allSettled: se um envio falhar, os outros terminam antes da limpeza, e nenhum clipe fica esquecido no bucket.
@@ -176,6 +197,47 @@ export class RemotionVideoProvider implements VideoProvider {
       throw error;
     });
     return { clips: { hook: clips[0], benefits: clips.slice(1, -1), cta: clips[clips.length - 1] }, keys, transcript: lines.join('\n') };
+  }
+
+  // Escolhe como gravar, conforme o serviço de voz. Com alinhamento (a ElevenLabs), tomada única natural cortada pelos
+  // tempos devolvidos; sem tomada única possível, uma frase por chamada; senão (a OpenAI), tomada única conferida pela
+  // transcrição. Qualquer falha cai na gravação frase a frase.
+  private async recordVoice (providerId: string, lines: string[], style: { style?: string }, directory: string) {
+    const fallback = (error: unknown) => {
+      this.logger.warn(`Locução em tomada única descartada; gravando trecho a trecho. providerId=${providerId} motivo=${describe(error)}`);
+      return this.recordLines(lines, style, directory);
+    };
+
+    if (this.speechProvider.synthesizeTake) return this.recordAlignedTake(lines, style, directory).catch(fallback);
+
+    if (this.speechProvider.singleTake === false) return this.recordLines(lines, style, directory);
+
+    return this.recordCheckedTake(providerId, lines, style, directory).catch(fallback);
+  }
+
+  // Tomada única com os pontos de corte dados pelo próprio serviço de voz: a fala sai como no playground, contínua e
+  // sem pausas forçadas, e o corte cai no respiro entre as frases sem precisar de silêncio nem de transcrição.
+  private async recordAlignedTake (lines: string[], style: { style?: string }, directory: string) {
+    const { audio, cuts } = await this.speechProvider.synthesizeTake!(lines, style.style);
+
+    if (cuts.length !== lines.length - 1) throw new AppError('upstream', 'A locução não trouxe um ponto de corte para cada trecho.');
+
+    const take = join(directory, `voice-take.${this.speechProvider.audioFormat}`);
+    await writeFile(take, audio);
+    return this.cutTake(take, lines, cuts);
+  }
+
+  private cutTake (take: string, lines: string[], cuts: number[]) {
+    return settleAll(lines.map(async (_, index) => {
+      const path = join(dirname(take), `voice-${index}.mp3`);
+      await this.voiceClips.tighten(take, path, { start: cuts[index - 1] ?? 0, ...(index < cuts.length && { end: cuts[index] }) }, this.tempo());
+      return path;
+    }));
+  }
+
+  // Aceleração do serviço de voz atual; sem valor, a padrão do FFmpeg (calibrada para a OpenAI).
+  private tempo () {
+    return this.speechProvider.tempo ?? VOICE_TEMPO;
   }
 
   // Só uma tomada que não conferiu é gravada de novo. Falha do TTS ou da transcrição vai direto para o modo trecho a trecho.
@@ -194,35 +256,35 @@ export class RemotionVideoProvider implements VideoProvider {
   // Tomada única: o roteiro inteiro numa chamada, para a voz manter entonação e timbre de uma frase para outra. A
   // transcrição confere se cada trecho foi falado e aponta a pausa onde cortar; qualquer divergência descarta a tomada.
   private async recordTake (lines: string[], style: { style?: string }, directory: string) {
-    const take = join(directory, 'voice-take.wav');
+    const take = join(directory, `voice-take.${this.speechProvider.audioFormat}`);
     await writeFile(take, await this.speechProvider.synthesize({ text: lines.map(sentence).join('\n'), ...style }));
     const [words, silences] = await Promise.all([this.transcriptionProvider.transcribe({ audio: await readFile(take), language: 'pt' }), this.voiceClips.silences(take)]);
     const alignment = alignVoiceLines(lines, words, silences);
 
     if (!alignment.ok) throw new TakeMismatchError(alignment.reason);
 
-    const { cuts } = alignment;
-    return settleAll(lines.map(async (_, index) => {
-      const path = join(directory, `voice-${index}.mp3`);
-      await this.voiceClips.tighten(take, path, { start: cuts[index - 1] ?? 0, ...(index < cuts.length && { end: cuts[index] }) });
-      return path;
-    }));
+    return this.cutTake(take, lines, alignment.cuts);
   }
 
-  // Um clipe por trecho, cada um numa chamada. Reserva para quando a tomada única não pode ser conferida.
+  // Um clipe por trecho, cada um numa chamada, uma de cada vez: os planos dos serviços de voz limitam as chamadas
+  // simultâneas (a ElevenLabs recusa com concurrent_limit_exceeded). As frases vizinhas vão como contexto, para a
+  // entonação seguir como numa leitura contínua, quando o serviço aceita.
   private async recordLines (lines: string[], style: { style?: string }, directory: string) {
-    return settleAll(lines.map(async (text, index) => {
-      const raw = join(directory, `voice-${index}-raw.wav`);
+    const paths: string[] = [];
+    for (const [index, text] of lines.entries()) {
+      const raw = join(directory, `voice-${index}-raw.${this.speechProvider.audioFormat}`);
       const path = join(directory, `voice-${index}.mp3`);
-      await writeFile(raw, await this.speechProvider.synthesize({ text, ...style }));
-      await this.voiceClips.tighten(raw, path);
-      return path;
-    }));
+      const neighbors = { ...(index > 0 && { previousText: lines[index - 1] }), ...(index < lines.length - 1 && { nextText: lines[index + 1] }) };
+      await writeFile(raw, await this.speechProvider.synthesize({ text, ...style, ...neighbors }));
+      await this.voiceClips.tighten(raw, path, undefined, this.tempo());
+      paths.push(path);
+    }
+    return paths;
   }
 
   // Um roteiro no formato de cenas (o que o Claude gera) vira a copy diretamente. Qualquer outro roteiro
   // (OpenAI ou editado à mão) é condensado pelo copy writer, junto com os dados do produto e o tom da marca.
-  private async adCopy ({ script, context, product, brand }: AdSource): Promise<ProductAdCopy> {
+  private async adCopy ({ script, context, product, brand, media }: AdSource): Promise<ProductAdCopy> {
     const scenes = parseAdScript(script);
 
     if (scenes) return { headline: scenes.hook, bullets: scenes.benefits, cta: scenes.callToAction };
@@ -230,6 +292,7 @@ export class RemotionVideoProvider implements VideoProvider {
     const { voiceTone, targetAudience, copyGuidelines } = context;
     const copyBrief: CopyContext = {
       name: product.name, description: product.description, brand: brand.name, voiceTone, targetAudience, copyGuidelines, ...(script.trim() && { script }),
+      ...(media.type === ContentMediaType.VIDEO && { video: true }),
     };
     return this.copyWriterProvider.write(copyBrief);
   }

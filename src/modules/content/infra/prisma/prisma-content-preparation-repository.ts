@@ -7,7 +7,7 @@ import { preparationFailed, preparationReady, runnablePreparation } from './cont
 
 const videoFields = { id: true, storageKey: true, captionedStorageKey: true, revision: true, reviewStatus: true } as const;
 const preparationFields = {
-  revision: true, status: true, scriptStatus: true, videoStatus: true, transcriptionStatus: true, subtitleStatus: true, subtitleLeaseUntil: true,
+  revision: true, status: true, humanApprove: true, scriptStatus: true, videoStatus: true, transcriptionStatus: true, subtitleStatus: true, subtitleLeaseUntil: true,
 } as const;
 
 @Injectable()
@@ -55,6 +55,7 @@ export class PrismaContentPreparationRepository implements ContentPreparationRep
         transcriptionStatus: content.transcriptionStatus,
         subtitleStatus: subtitleLeaseExpired ? 'NOT_STARTED' as const : content.subtitleStatus,
         revision: content.revision,
+        humanApprove: content.humanApprove,
         video: video && {
           id: video.id, revision: video.revision,
           reviewStatus: ContentStatus[video.reviewStatus], storageKey: video.captionedStorageKey ?? video.storageKey,

@@ -8,20 +8,21 @@ datasource db {
 }
 
 model Company {
-  id          String             @id @default(uuid())
-  name        String
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  users       User[]
-  brands      Brand[]
-  campaigns   Campaign[]
-  rules       CampaignRules[]
-  products    Product[]
-  media       MediaAsset[]
-  contents    Content[]
-  schedules   ContentScheduled[]
-  accounts    SocialAccount[]
-  credentials SocialCredential[]
+  id                    String                 @id @default(uuid())
+  name                  String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  users                 User[]
+  brands                Brand[]
+  campaigns             Campaign[]
+  rules                 CampaignRules[]
+  products              Product[]
+  media                 MediaAsset[]
+  contents              Content[]
+  schedules             ContentScheduled[]
+  accounts              SocialAccount[]
+  credentials           SocialCredential[]
+  imageTemplateSettings ImageTemplateSetting[]
 
   @@map("companies")
 }
@@ -59,6 +60,19 @@ enum ContentStatus {
   ERROR
 }
 
+// Tipo da foto do produto: só o produto ou com pessoas (em uso, no dia a dia). Os templates de foto escolhem a foto
+// de cada cena pelo tipo preferido nela (ImageTemplateSetting).
+enum MediaAssetKind {
+  PRODUCT
+  PERSON
+}
+
+// Tipo de mídia do conteúdo: o anúncio é montado com fotos ou com vídeos reais (nunca os dois).
+enum ContentMediaType {
+  IMAGE
+  VIDEO
+}
+
 enum PreparationStatus {
   NOT_STARTED
   PENDING
@@ -93,21 +107,23 @@ enum PublicationStatus {
 }
 
 model Brand {
-  id        String     @id @default(uuid())
-  companyId String
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name           String
-  primaryColor   String?
-  secondaryColor String?
-  tertiaryColor  String?
+  id              String     @id @default(uuid())
+  companyId       String
+  company         Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  primaryColor    String?
+  secondaryColor  String?
+  tertiaryColor   String?
   quaternaryColor String?
-  voiceTone      String?
-  targetAudience String?
-  copyGuidelines String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  campaigns      Campaign[]
-  products       Product[]
+  voiceTone       String?
+  targetAudience  String?
+  copyGuidelines  String?
+  // Logo da marca no storage (PNG normalizado, com transparência). Os templates mostram no fechamento e no selo da marca.
+  logoStorageKey  String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  campaigns       Campaign[]
+  products        Product[]
 
   @@unique([companyId, id])
   @@map("brands")
@@ -176,6 +192,7 @@ model MediaAsset {
   storageKey  String         @unique
   contentType String
   bytes       Int
+  kind        MediaAssetKind @default(PRODUCT)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   contents    ContentAsset[]
@@ -186,36 +203,40 @@ model MediaAsset {
 }
 
 model Content {
-  id                        String                       @id @default(uuid())
-  companyId                 String
-  campaingId                String
-  campaingRulesId           String
-  productId                 String
-  products                  ContentProduct[]
-  aiScript                  String
-  scriptStatus              PreparationStatus            @default(NOT_STARTED)
-  videoStatus               PreparationStatus            @default(NOT_STARTED)
-  transcriptionStatus       PreparationStatus            @default(NOT_STARTED)
-  transcriptionSubmissionId String?                      @unique
-  transcription             String?
-  subtitleSrt               String?
-  subtitleStatus            PreparationStatus @default(NOT_STARTED)
-  subtitleLeaseUntil        DateTime?
-  publicationPreparationRequested Boolean @default(false)
-  status                    ContentStatus                @default(WAITING)
-  editorial                 Json                         @default("{}")
+  id                              String                       @id @default(uuid())
+  companyId                       String
+  campaingId                      String
+  campaingRulesId                 String
+  productId                       String
+  products                        ContentProduct[]
+  aiScript                        String
+  scriptStatus                    PreparationStatus            @default(NOT_STARTED)
+  videoStatus                     PreparationStatus            @default(NOT_STARTED)
+  transcriptionStatus             PreparationStatus            @default(NOT_STARTED)
+  transcriptionSubmissionId       String?                      @unique
+  transcription                   String?
+  subtitleSrt                     String?
+  subtitleStatus                  PreparationStatus            @default(NOT_STARTED)
+  subtitleLeaseUntil              DateTime?
+  publicationPreparationRequested Boolean                      @default(false)
+  status                          ContentStatus                @default(WAITING)
+  // Revisão humana da revisão atual do conteúdo: true aprovado, false reprovado, null aguardando. Só conteúdo aprovado
+  // é publicado; uma nova revisão volta para null.
+  humanApprove                    Boolean?
+  editorial                       Json                         @default("{}")
   // Áudio do anúncio: música de fundo e locução (TTS) do roteiro.
-  backgroundMusic           Boolean                      @default(false)
-  voiceover                 Boolean                      @default(false)
-  embedding                 Unsupported("vector(1536)")?
-  revision                  Int                          @default(1)
-  createdAt                 DateTime                     @default(now())
-  updatedAt                 DateTime                     @updatedAt
-  assets                    ContentAsset[]
-  history                   ContentHistory[]
-  renders                   VideoGeneration[]
-  videos                    VideoAsset[]
-  schedules                 ContentScheduled[]
+  backgroundMusic                 Boolean                      @default(false)
+  voiceover                       Boolean                      @default(false)
+  contentMediaType                ContentMediaType             @default(IMAGE)
+  embedding                       Unsupported("vector(1536)")?
+  revision                        Int                          @default(1)
+  createdAt                       DateTime                     @default(now())
+  updatedAt                       DateTime                     @updatedAt
+  assets                          ContentAsset[]
+  history                         ContentHistory[]
+  renders                         VideoGeneration[]
+  videos                          VideoAsset[]
+  schedules                       ContentScheduled[]
 
   company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   campaing      Campaign      @relation(fields: [companyId, campaingId], references: [companyId, id], onDelete: Cascade)
@@ -290,20 +311,20 @@ model VideoGeneration {
 }
 
 model VideoAsset {
-  id           String             @id @default(uuid())
-  companyId    String
-  contentId    String
-  content      Content            @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
-  generationId String
-  generation   VideoGeneration    @relation(fields: [companyId, contentId, generationId], references: [companyId, contentId, id], onDelete: Cascade)
-  revision     Int
-  storageKey   String             @unique
+  id                  String             @id @default(uuid())
+  companyId           String
+  contentId           String
+  content             Content            @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
+  generationId        String
+  generation          VideoGeneration    @relation(fields: [companyId, contentId, generationId], references: [companyId, contentId, id], onDelete: Cascade)
+  revision            Int
+  storageKey          String             @unique
   captionedStorageKey String?
-  reviewStatus ContentStatus
-  review       Json
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  schedules    ContentScheduled[]
+  reviewStatus        ContentStatus
+  review              Json
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  schedules           ContentScheduled[]
 
   @@unique([companyId, contentId, generationId])
   @@unique([companyId, contentId, id])
@@ -352,24 +373,24 @@ model SocialCredential {
 }
 
 model ContentScheduled {
-  id          String        @id @default(uuid())
-  companyId   String
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  contentId   String?
-  content     Content?      @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
-  videoId     String?
-  video       VideoAsset?   @relation(fields: [companyId, contentId, videoId], references: [companyId, contentId, id], onDelete: NoAction)
-  date        DateTime
-  status      ContentStatus @default(WAITING)
-  socialAccountId String?
-  socialAccount SocialAccount? @relation(fields: [companyId, socialAccountId], references: [companyId, id], onDelete: NoAction)
-  caption String?
-  preparationError String?
-  contentDraft Json?
+  id                        String         @id @default(uuid())
+  companyId                 String
+  company                   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contentId                 String?
+  content                   Content?       @relation(fields: [companyId, contentId], references: [companyId, id], onDelete: Cascade)
+  videoId                   String?
+  video                     VideoAsset?    @relation(fields: [companyId, contentId, videoId], references: [companyId, contentId, id], onDelete: NoAction)
+  date                      DateTime
+  status                    ContentStatus  @default(WAITING)
+  socialAccountId           String?
+  socialAccount             SocialAccount? @relation(fields: [companyId, socialAccountId], references: [companyId, id], onDelete: NoAction)
+  caption                   String?
+  preparationError          String?
+  contentDraft              Json?
   contentCreationLeaseUntil DateTime?
-  publication Publication?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  publication               Publication?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
 
   @@unique([companyId, id])
   @@index([companyId, date])
@@ -396,4 +417,19 @@ model Publication {
   @@unique([companyId, scheduleId])
   @@index([status, updatedAt])
   @@map("publications")
+}
+
+// Configuração de um template de foto (PRODUCT_AD_TEMPLATES) na empresa: o tipo de foto preferido em cada uma das três
+// cenas (abertura, benefícios, fechamento). Sem registro, as fotos entram na ordem escolhida no conteúdo.
+model ImageTemplateSetting {
+  id        String           @id @default(uuid())
+  companyId String
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  template  String
+  slotKinds MediaAssetKind[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([companyId, template])
+  @@map("image_template_settings")
 }

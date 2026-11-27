@@ -1,5 +1,6 @@
-import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { Authenticated } from '@/modules/identity/infra/guards/authenticated.decorator';
+import { GenerateVideoDto } from '../../application/dto/generate-video.dto';
 import { GenerateVideoUseCase } from '../../application/use-cases/generate-video.usecase';
 import { GetVideoGenerationStatusUseCase } from '../../application/use-cases/get-video-generation-status.usecase';
 
@@ -13,8 +14,8 @@ export class VideoGenerationController {
 
   @Post('contents/:id/video-generations')
   @HttpCode(202)
-  generate (@Param('id', ParseUUIDPipe) id: string) {
-    return this.generateVideoUseCase.execute(id);
+  generate (@Param('id', ParseUUIDPipe) id: string, @Body() dto: GenerateVideoDto = {}) {
+    return this.generateVideoUseCase.execute(id, dto.template);
   }
 
   @Get('contents/:id/video-generations')

@@ -6,12 +6,12 @@ import { promisify } from 'node:util';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppError } from '@/shared/core/errors/app.error';
-import type { ProductAdProps } from '../../domain/entities/product-ad';
+import type { ProductAdProps, VideoAdProps } from '../../domain/entities/product-ad';
 
 // Variáveis repassadas ao processo do Remotion. Segredos do backend (chaves, DATABASE_URL etc.) não são herdados.
 const INHERITED_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'NODE_ENV', 'XDG_CACHE_HOME'];
 
-export type RemotionRenderJob = { compositionId: string; props: ProductAdProps; outputPath: string; timeoutMs: number };
+export type RemotionRenderJob = { compositionId: string; props: ProductAdProps | VideoAdProps; outputPath: string; timeoutMs: number };
 
 type Execute = (file: string, args: string[], options: { cwd: string; timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv; killSignal: NodeJS.Signals }) => Promise<unknown>;
 

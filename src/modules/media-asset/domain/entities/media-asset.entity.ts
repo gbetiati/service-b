@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { MediaAssetKind } from './media-asset-kind';
 
 export type MediaAssetContentType = 'image/jpeg' | 'video/mp4';
 
@@ -12,13 +13,14 @@ export class MediaAsset {
     readonly bytes: number,
     readonly createdAt: Date,
     readonly updatedAt: Date,
+    readonly kind: MediaAssetKind = MediaAssetKind.PRODUCT,
   ) {}
 
-  static create (companyId: string, productId: string, bytes: number, contentType: MediaAssetContentType = 'image/jpeg') {
+  static create (companyId: string, productId: string, bytes: number, contentType: MediaAssetContentType = 'image/jpeg', kind = MediaAssetKind.PRODUCT) {
     const id = randomUUID();
     const now = new Date();
     const extension = contentType === 'video/mp4' ? 'mp4' : 'jpg';
-    return new MediaAsset(id, companyId, productId, `${companyId}/products/${productId}/${id}.${extension}`, contentType, bytes, now, now);
+    return new MediaAsset(id, companyId, productId, `${companyId}/products/${productId}/${id}.${extension}`, contentType, bytes, now, now, kind);
   }
 
   // Considera vídeo quando o cliente declara um MIME de vídeo ou quando o arquivo tem a assinatura ISO BMFF ("ftyp").

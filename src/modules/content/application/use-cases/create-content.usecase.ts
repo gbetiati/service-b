@@ -3,6 +3,7 @@ import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
 import { ContentAsset } from '../../domain/entities/content-asset.entity';
 import { Content, SILENT_AUDIO, mergeAudio } from '../../domain/entities/content.entity';
+import { ContentMediaType } from '../../domain/entities/content-media-type';
 import { ScriptProvider } from '../../domain/providers/script.provider';
 import { ContentRepository } from '../../domain/repositories/content.repository';
 import { CreateContentDto } from '../dto/create-content.dto';
@@ -19,7 +20,7 @@ export class CreateContentUseCase {
     return this.contentRepository.create(await this.prepare(dto));
   }
 
-  // Valida campanha, regra, produtos e imagens sem gerar roteiro nem persistir.
+  // Valida campanha, regra, produtos e mídias sem gerar roteiro nem persistir.
   async validateReferences (dto: CreateContentDto) {
     await this.build(dto);
   }
@@ -39,7 +40,7 @@ export class CreateContentUseCase {
     const content = Content.create(this.requestContext.companyId, {
       campaingId: dto.campaingId, campaingRulesId: dto.campaingRulesId, productId: dto.productId,
       productIds: dto.productIds ?? [], aiScript: dto.aiScript ?? '', editorial: dto.editorial ?? {},
-      audio: mergeAudio(SILENT_AUDIO, dto.audio),
+      audio: mergeAudio(SILENT_AUDIO, dto.audio), contentMediaType: dto.contentMediaType ?? ContentMediaType.IMAGE,
       assets: ContentAsset.fromMediaAssetIds(dto.mediaAssetIds ?? []),
     });
     const context = content.buildScriptContext(await this.contentRepository.findReferences(content));

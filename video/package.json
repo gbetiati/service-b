@@ -5,7 +5,7 @@
   "description": "Templates Remotion usados pelo provider Remotion do módulo video-generation do service-b.",
   "scripts": {
     "studio": "remotion studio src/index.ts",
-    "render:sample": "remotion render src/index.ts ProductAd-9x16 out/sample-9x16.mp4 --props=./sample-props.json",
+    "render:sample": "remotion render src/index.ts ProductAdStory-9x16 out/sample-9x16.mp4 --props=./sample-props.json",
     "bundle": "remotion bundle src/index.ts --out-dir build",
     "browser:ensure": "remotion browser ensure",
     "typecheck": "tsc --noEmit"
@@ -13,6 +13,7 @@
   "dependencies": {
     "@remotion/cli": "4.0.546",
     "@remotion/fonts": "4.0.546",
+    "@remotion/player": "4.0.546",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "remotion": "4.0.546"

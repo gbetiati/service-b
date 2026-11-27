@@ -78,7 +78,7 @@ test('company onboarding through content preparation and deferred publication cr
       render: async input => {
         renders++;
         assert.equal(input.script, failRender ? 'Nova revisão depois de publicar' : 'Roteiro criado pela IA.');
-        assert.equal(input.imageUrls.length, 1);
+        assert.equal(input.mediaUrls.length, 1);
 
         if (failRender) throw new Error('Render indisponível no teste.');
 

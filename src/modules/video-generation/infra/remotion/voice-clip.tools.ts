@@ -13,16 +13,19 @@ export type ClipRange = { start: number; end?: number };
 // 15 s sem atropelar a voz (o atempo não muda o tom).
 export const VOICE_TEMPO = 1.1;
 
-// Corta o silêncio do começo e do fim (o TTS deixa de 0,2 a 0,7 s em cada ponta), acelera a fala e normaliza o volume
-// para -16 LUFS, o padrão de vídeo em redes sociais: a voz da OpenAI sai baixa (cerca de -30 dB) e sumia sob a música.
-const TIGHTEN_FILTER = [
-  'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.04',
-  'areverse',
-  'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08',
-  'areverse',
-  `atempo=${VOICE_TEMPO}`,
-  'loudnorm=I=-16:TP=-1.5:LRA=11',
-].join(',');
+// Corta o silêncio do começo e do fim (o TTS deixa de 0,2 a 0,7 s em cada ponta), acelera a fala (quando `tempo` não é
+// 1) e normaliza o volume para -16 LUFS, o padrão de vídeo em redes sociais: a voz da OpenAI sai baixa (cerca de -30 dB)
+// e sumia sob a música.
+function tightenFilter (tempo: number) {
+  return [
+    'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.04',
+    'areverse',
+    'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08',
+    'areverse',
+    ...(tempo !== 1 ? [`atempo=${tempo}`] : []),
+    'loudnorm=I=-16:TP=-1.5:LRA=11',
+  ].join(',');
+}
 
 // Pausa mínima considerada na detecção: as pausas entre frases do TTS ficam entre 0,2 e 0,6 s.
 const SILENCE_FILTER = 'silencedetect=noise=-40dB:d=0.12';
@@ -33,10 +36,11 @@ export class VoiceClipTools {
   protected execute: Execute = promisify(execFile) as unknown as Execute;
 
   // Prepara um clipe da fala. Com `range`, usa só esse trecho do áudio (um trecho do roteiro gravado numa tomada só).
-  async tighten (input: string, output: string, range?: ClipRange) {
+  // `tempo` é a aceleração; a padrão foi calibrada para a OpenAI, e a ElevenLabs usa 1 (velocidade natural).
+  async tighten (input: string, output: string, range?: ClipRange, tempo = VOICE_TEMPO) {
     const cut = range ? ['-ss', String(range.start), ...(range.end !== undefined ? ['-to', String(range.end)] : [])] : [];
     await this.execute('ffmpeg', [
-      '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file', ...cut, '-i', input, '-af', TIGHTEN_FILTER, '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '128k', '-y', output,
+      '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file', ...cut, '-i', input, '-af', tightenFilter(tempo), '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '128k', '-y', output,
     ], { timeout: 15000, maxBuffer: 64 * 1024 }).catch(error => fail(error, 'FFmpeg indisponível para preparar a locução.', 'Não foi possível preparar o áudio da locução.'));
   }
 
@@ -57,6 +61,20 @@ export class VoiceClipTools {
     const seconds = Number(stdout.trim());
 
     if (!Number.isFinite(seconds) || seconds <= 0) throw new AppError('upstream', 'Não foi possível ler o áudio da locução.');
+
+    return seconds;
+  }
+
+  // Duração de um vídeo do conteúdo pela URL assinada do storage, para o template saber quanto pode usar de cada clipe.
+  async videoSeconds (url: string) {
+    if (!/^https?:\/\//.test(url)) throw new AppError('invalid', 'Endereço de vídeo inválido.');
+
+    const { stdout } = await this.execute('ffprobe', [
+      '-v', 'error', '-protocol_whitelist', 'https,http,tls,tcp,crypto', '-show_entries', 'format=duration', '-of', 'csv=p=0', url,
+    ], { timeout: 30000, maxBuffer: 16 * 1024 }).catch(error => fail(error, 'FFprobe indisponível para medir os vídeos.', 'Não foi possível ler um dos vídeos do conteúdo.'));
+    const seconds = Number(stdout.trim());
+
+    if (!Number.isFinite(seconds) || seconds <= 0) throw new AppError('upstream', 'Não foi possível ler um dos vídeos do conteúdo.');
 
     return seconds;
   }

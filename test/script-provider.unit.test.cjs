@@ -49,7 +49,7 @@ test('the script context carries the brand voice only when the brand has it', ()
     campaign: { brandId: 'brand', objective: 'Vender', brand },
     rule: { campaingId: 'campaign', guidelines: 'Usar fotos reais.' },
     products: [{ id: 'product', brandId: 'brand', name: 'Tênis', description: null }],
-    images: [{ id: 'image', productId: 'product', storageKey: 'k' }],
+    media: [{ id: 'image', productId: 'product', storageKey: 'k', contentType: 'image/jpeg' }],
   });
   const empty = { name: 'Marca', primaryColor: '#ff5500', secondaryColor: null, voiceTone: null, targetAudience: null, copyGuidelines: null };
   assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(content.buildScriptContext(references(empty))))).sort(), ['brand', 'guidelines', 'objective', 'products']);

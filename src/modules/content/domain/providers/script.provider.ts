@@ -3,7 +3,10 @@ export type BrandVoice = { voiceTone?: string; targetAudience?: string; copyGuid
 
 // Contexto que o backend monta para a IA escrever o roteiro: marca, objetivo da campanha, diretrizes das regras, produtos
 // e o briefing escrito pelo usuário (`editorial.brief`, aqui em `brief`). Não confundir com o briefing em si.
-export type ScriptContext = { brand: string; objective: string | null; guidelines: string; products: string[]; brief?: string } & BrandVoice;
+import type { ContentMediaType } from '../entities/content-media-type';
+
+// `mediaType` só aparece quando o anúncio usa vídeos reais (VIDEO): o roteiro ganha o guia de gancho para vídeo.
+export type ScriptContext = { brand: string; objective: string | null; guidelines: string; products: string[]; brief?: string; mediaType?: ContentMediaType } & BrandVoice;
 
 export type ScriptOutcome = { script: string } | { error: string };
 export type ScriptResult = { submissionId: string; outcome: ScriptOutcome };

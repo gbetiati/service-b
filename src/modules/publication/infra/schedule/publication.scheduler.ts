@@ -61,11 +61,9 @@ export class PublicationScheduler {
 
       if (!scheduled) return;
 
-      // TESTE (mock): criação da publicação comentada; o fluxo para no upload do vídeo para o S3.
-      // if (result.status === 'READY') {
-      //   await this.publicationRepository.createFromPreparedContent({ ...input, revision: result.revision, videoId: result.videoId });
-      // } else if (result.status === 'FAILED') {
-      if (result.status === 'FAILED') {
+      if (result.status === 'READY') {
+        await this.publicationRepository.createFromPreparedContent({ ...input, revision: result.revision, videoId: result.videoId });
+      } else if (result.status === 'FAILED') {
         await this.contentScheduleRepository.failPreparation(input, result.revision, result.error);
       }
     } catch (error) {
@@ -73,8 +71,8 @@ export class PublicationScheduler {
     }
   }
 
-  // TESTE (mock): cron de publicação desligado; reative o decorator abaixo.
-  // @Cron('*/5 * * * * *', { waitForCompletion: true })
+  @Cron('*/5 * * * * *', { waitForCompletion: true })
+  // Publica no Instagram os agendamentos com vídeo preparado e conteúdo aprovado na revisão humana.
   async publishReady () {
     const publications = await this.publicationRepository.findEligibleIds();
 

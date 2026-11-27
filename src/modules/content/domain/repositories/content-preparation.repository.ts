@@ -12,6 +12,8 @@ export type ContentPreparationState = {
   videoStatus: PreparationStatus;
   transcriptionStatus: PreparationStatus;
   subtitleStatus: PreparationStatus;
+  // Revisão humana da revisão atual: true aprovado, false reprovado, null aguardando.
+  humanApprove: boolean | null;
   video: { id: string; revision: number; reviewStatus: ContentStatus; storageKey: string } | null;
 };
 

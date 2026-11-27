@@ -24,6 +24,7 @@ export class Brand {
     readonly voiceTone: string | null = null,
     readonly targetAudience: string | null = null,
     readonly copyGuidelines: string | null = null,
+    readonly logoStorageKey: string | null = null,
   ) { }
 
   static create(companyId: string, name: string, profile: Partial<BrandProfile> = {}) {

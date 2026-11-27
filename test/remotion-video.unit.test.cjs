@@ -15,7 +15,7 @@ const { RemotionSettings } = require('../dist/modules/video-generation/infra/rem
 const { RenderSemaphore } = require('../dist/modules/video-generation/infra/remotion/render-semaphore');
 const { RemotionWebhookController } = require('../dist/modules/video-generation/infra/controllers/remotion-webhook.controller');
 const { OpenAiSpeechProvider } = require('../dist/modules/video-generation/infra/providers/openai-speech.provider');
-const { PRODUCT_AD_MUSIC_TRACKS } = require('../dist/modules/video-generation/infra/remotion/product-ad.compositions');
+const { PRODUCT_AD_MUSIC_TRACKS, VIDEO_AD_TEMPLATES } = require('../dist/modules/video-generation/infra/remotion/product-ad.compositions');
 const { ProductAdPolicy, contrastRatio, MIN_PALETTE_CONTRAST } = require('../dist/modules/video-generation/domain/entities/product-ad');
 const { seededRandom } = require('../dist/shared/core/random');
 const { AppError } = require('../dist/shared/core/errors/app.error');
@@ -69,13 +69,13 @@ test('ClaudeCopyWriterProvider surfaces schema violations, refusals and truncati
 
 test('ad props take name, price and image from the product, never from the copy', () => {
   const copy = { headline: 'Só hoje por R$ 1,00', bullets: ['Desconto de 90%', 'aaa'], cta: 'Compre' };
-  const props = ProductAdPolicy.buildProps({ product: { name: 'Tênis', price: '199.90', oldPrice: '249.90' }, copy, imageUrl: 'https://bucket/img.jpg', primaryColor: '#112233' });
-  assert.deepEqual(props.product, { name: 'Tênis', imageUrl: 'https://bucket/img.jpg', price: 'R$ 199,90', oldPrice: 'R$ 249,90' });
+  const props = ProductAdPolicy.buildProps({ product: { name: 'Tênis', price: '199.90', oldPrice: '249.90' }, copy, imageUrls: ['https://bucket/img.jpg'], primaryColor: '#112233' });
+  assert.deepEqual(props.product, { name: 'Tênis', imageUrl: 'https://bucket/img.jpg', imageUrls: ['https://bucket/img.jpg'], price: 'R$ 199,90', oldPrice: 'R$ 249,90' });
   assert.deepEqual(Object.keys(props.copy).sort(), ['bullets', 'cta', 'headline']);
-  assert.equal(ProductAdPolicy.buildProps({ product: { name: 'A', price: '10.00', oldPrice: '9.00' }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000' }).product.oldPrice, undefined);
-  assert.deepEqual(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: null }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000', secondaryColor: '#ffffff' }).brand, { primaryColor: '#000000', secondaryColor: '#ffffff' });
-  assert.deepEqual(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: null }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000', secondaryColor: null }).brand, { primaryColor: '#000000' });
-  assert.equal(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: '9.00' }, copy: validCopy, imageUrl: 'u', primaryColor: '#000000' }).product.price, undefined);
+  assert.equal(ProductAdPolicy.buildProps({ product: { name: 'A', price: '10.00', oldPrice: '9.00' }, copy: validCopy, imageUrls: ['u'], primaryColor: '#000000' }).product.oldPrice, undefined);
+  assert.deepEqual(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: null }, copy: validCopy, imageUrls: ['u'], primaryColor: '#000000', secondaryColor: '#ffffff' }).brand, { primaryColor: '#000000', secondaryColor: '#ffffff' });
+  assert.deepEqual(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: null }, copy: validCopy, imageUrls: ['u'], primaryColor: '#000000', secondaryColor: null }).brand, { primaryColor: '#000000' });
+  assert.equal(ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: '9.00' }, copy: validCopy, imageUrls: ['u'], primaryColor: '#000000' }).product.price, undefined);
   assert.ok(ProductAdPolicy.findCommercialClaim(copy));
   assert.equal(ProductAdPolicy.findCommercialClaim(validCopy), null);
 });
@@ -165,21 +165,23 @@ function remotionHarness ({ copy = validCopy, render, random = 0.1, synthesize, 
   const spokenText = buffer => buffer.toString().slice('mp3:'.length);
   const transcription = { transcribe: async request => transcribe ? transcribe(request) : fakeTake(spokenText(request.audio)).words };
   const tightened = [];
+  const measured = [];
   // Duração falsa proporcional ao conteúdo, como uma fala de ~15 caracteres por segundo. Um trecho da tomada vira o texto do intervalo.
   const probe = {
     tighten: async (input, output, range) => { tightened.push(range); writeFileSync(output, range ? `clip:${range.start}-${range.end ?? 'fim'}` : readFileSync(input)); },
     silences: async path => fakeTake(spokenText(readFileSync(path))).silences,
     seconds: async path => readFileSync(path).length / 15,
+    videoSeconds: async url => { measured.push(url); return url.includes('short') ? 3.5 : 12; },
   };
   const provider = new RemotionVideoProvider(writer, renderer, storage, client, new RenderSemaphore(1), settings, speech, probe, transcription);
   const seeds = [];
   provider.randomFor = seed => { seeds.push(seed); return () => random; };
-  return { provider, effects, renders, objects, event, seeds, spoken, tightened };
+  return { provider, effects, renders, objects, event, seeds, spoken, tightened, measured };
 }
 
 const brand = { name: 'Marca', primaryColor: '#ff5500', secondaryColor: '#1a1a1a' };
 const context = { brand: 'Marca', objective: null, guidelines: 'Usar fotos reais.', products: ['Tênis Run: Leve'], voiceTone: 'Enérgico', targetAudience: 'Corredores' };
-const request = { submissionId: randomUUID(), script: 'Roteiro livre da OpenAI.', imageUrls: ['https://storage.test/a.jpg', 'https://storage.test/b.jpg'], brand, context, product };
+const request = { submissionId: randomUUID(), script: 'Roteiro livre da OpenAI.', mediaUrls: ['https://storage.test/a.jpg', 'https://storage.test/b.jpg'], mediaType: 'IMAGE', brand, context, product };
 const sceneScript = 'Gancho: Corra mais leve\nBenefícios:\n- Amortecimento macio\n- Cabedal respirável\nChamada: Garanta o seu';
 
 test('RemotionVideoProvider renders in background, stores the MP4 and notifies success through the webhook', async () => {
@@ -190,14 +192,15 @@ test('RemotionVideoProvider renders in background, stores the MP4 and notifies s
 
   const event = await h.event;
   const storageKey = h.provider.outputKey(providerId);
-  assert.deepEqual(event, { submissionId: request.submissionId, providerId, status: 'succeeded', storageKey, template: 'ProductAd' }, 'the drawn template goes to the completion to name the file');
+  assert.deepEqual(event, { submissionId: request.submissionId, providerId, status: 'succeeded', storageKey, template: 'ProductAdStory' }, 'the drawn template goes to the completion to name the file');
   assert.deepEqual(h.effects, [['copy', {
     name: 'Tênis Run', description: 'Leve', brand: 'Marca', voiceTone: 'Enérgico', targetAudience: 'Corredores', copyGuidelines: undefined, script: 'Roteiro livre da OpenAI.',
   }]], 'a free-form script is condensed by the copy writer with the brand voice');
   assert.deepEqual(h.renders[0].props.brand, { primaryColor: '#ff5500', secondaryColor: '#1a1a1a' });
-  assert.equal(h.renders[0].compositionId, 'ProductAd-9x16');
+  assert.equal(h.renders[0].compositionId, 'ProductAdStory-9x16');
   assert.equal(h.renders[0].props.product.price, 'R$ 199,90');
   assert.equal(h.renders[0].props.product.imageUrl, 'https://storage.test/a.jpg');
+  assert.deepEqual(h.renders[0].props.product.imageUrls, ['https://storage.test/a.jpg', 'https://storage.test/b.jpg'], 'every chosen photo reaches the template, in order');
   assert.equal(h.renders[0].timeoutMs, 60000);
   assert.equal(existsSync(h.renders[0].outputPath), false, 'local render output removed');
   assert.equal(h.objects.get(storageKey).toString(), 'mp4-bytes');
@@ -253,7 +256,8 @@ test('RemotionVideoProvider records one clip per scene when the take does not ma
   const event = await h.event;
   const lines = [validCopy.headline, ...validCopy.bullets, validCopy.cta];
   assert.equal(event.status, 'succeeded');
-  assert.deepEqual(h.spoken.slice(2), lines.map(text => ({ text, style: 'Enérgico' })), 'both truncated takes are discarded and each scene gets its own call');
+  const withNeighbors = (text, index) => ({ text, style: 'Enérgico', ...(index > 0 && { previousText: lines[index - 1] }), ...(index < lines.length - 1 && { nextText: lines[index + 1] }) });
+  assert.deepEqual(h.spoken.slice(2), lines.map(withNeighbors), 'both truncated takes are discarded and each scene gets its own call, with the neighbor lines as context');
   const { voiceover } = h.renders[0].props.audio;
   [voiceover.hook, ...voiceover.benefits, voiceover.cta].forEach((clip, index) => assert.equal(clip.durationInSeconds, Buffer.byteLength('mp3:' + lines[index]) / 15));
 });
@@ -316,7 +320,7 @@ test('RemotionVideoProvider draws the brand palette from the render id', async (
 });
 
 test('RemotionVideoProvider draws one of the registered templates from the render id', async () => {
-  const draws = { 0.05: 'ProductAd-9x16', 0.2: 'ProductAdEditorial-9x16', 0.3: 'ProductAdKinetic-9x16', 0.4: 'ProductAdChecklist-9x16', 0.55: 'ProductAdCallouts-9x16', 0.7: 'ProductAdNative-9x16', 0.8: 'ProductAdOffer-9x16', 0.95: 'ProductAdMontage-9x16' };
+  const draws = { 0.1: 'ProductAdStory-9x16', 0.3: 'ProductAdReveal-9x16', 0.6: 'ProductAdNative-9x16', 0.9: 'ProductAdMontage-9x16' };
   for (const [random, compositionId] of Object.entries(draws)) {
     const h = remotionHarness({ random: Number(random) });
     await h.provider.render(request);
@@ -461,4 +465,251 @@ test('contrastRatio follows the WCAG formula', () => {
   assert.equal(contrastRatio('#000000', '#ffffff').toFixed(1), '21.0');
   assert.equal(contrastRatio('#7b3f1d', '#7b3f1d'), 1);
   assert.equal(contrastRatio('#f5d6a8', '#fbcfe8').toFixed(2), '1.01');
+});
+
+test('RemotionVideoProvider renders video content with a video template, every clip measured and the hook guide for the copy', async () => {
+  const h = remotionHarness({ random: 0.5 });
+  const mediaUrls = ['https://storage.test/process.mp4', 'https://storage.test/short-result.mp4'];
+  const providerId = await h.provider.render({ ...request, mediaUrls, mediaType: 'VIDEO' });
+  const event = await h.event;
+  const template = VIDEO_AD_TEMPLATES[Math.floor(0.5 * VIDEO_AD_TEMPLATES.length)];
+
+  assert.equal(event.status, 'succeeded');
+  assert.equal(event.template, template, 'the template is drawn among the video templates');
+  assert.equal(h.renders[0].compositionId, `${template}-9x16`);
+  assert.deepEqual(h.measured, mediaUrls, 'every clip is measured, in the chosen order');
+  const { props } = h.renders[0];
+  assert.deepEqual(props.clips, [{ src: mediaUrls[0], durationInSeconds: 12 }, { src: mediaUrls[1], durationInSeconds: 3.5 }]);
+  assert.equal(props.product.imageUrl, undefined, 'video props carry clips, not a photo');
+  assert.deepEqual(props.product, { name: 'Tênis Run', price: 'R$ 199,90', oldPrice: 'R$ 249,90' });
+  assert.equal(props.brand.name, 'Marca', 'the brand name goes to the opening');
+  assert.deepEqual([props.brand.primaryColor, props.brand.secondaryColor].sort(), ['#1a1a1a', '#ff5500'], 'the palette is drawn from the brand colors, as in the photo templates');
+  assert.equal(h.effects[0][1].video, true, 'the copy writer gets the hook guide for real footage');
+  assert.ok(h.seeds.includes(providerId + ':template'));
+});
+
+test('RemotionVideoProvider keeps photo content on the photo templates without measuring anything', async () => {
+  const h = remotionHarness();
+  await h.provider.render(request);
+  await h.event;
+  assert.equal(h.renders[0].compositionId, 'ProductAdStory-9x16');
+  assert.equal(h.measured.length, 0);
+  assert.equal(h.effects[0][1].video, undefined);
+  assert.equal(h.renders[0].props.clips, undefined);
+});
+
+test('RemotionVideoProvider asks for a video when video content has none, and fails the render when a clip cannot be read', async () => {
+  await assert.rejects(remotionHarness().provider.render({ ...request, mediaUrls: [], mediaType: 'VIDEO' }), /um vídeo real/);
+  await assert.rejects(remotionHarness().provider.render({ ...request, mediaUrls: [] }), /uma foto real/);
+
+  const h = remotionHarness();
+  h.provider.voiceClips.videoSeconds = async () => { throw new AppError('upstream', 'Não foi possível ler um dos vídeos do conteúdo.'); };
+  await h.provider.render({ ...request, mediaUrls: ['https://storage.test/broken.mp4'], mediaType: 'VIDEO', audio: { backgroundMusic: false, voiceover: true } });
+  assert.equal((await h.event).status, 'failed');
+  assert.equal(h.spoken.length, 0, 'an unreadable clip fails before any speech is synthesized');
+  assert.equal(h.renders.length, 0);
+});
+
+test('RemotionWebhookController keeps the template name of photo and video templates for the file name, and drops unknown ones', async () => {
+  const providerId = 'remotion:' + randomUUID();
+  const submissionId = randomUUID();
+  const calls = [];
+  const remotion = new RemotionVideoProvider({}, {}, { open: async key => 'stream:' + key, remove: async () => {} }, {}, new RenderSemaphore(1), settings, {}, {});
+  const controller = new RemotionWebhookController({ execute: async result => { calls.push(result); } }, remotion);
+  const storageKey = remotion.outputKey(providerId);
+
+  for (const template of ['VideoAdResultFirst', 'ProductAdNative', '../outro']) {
+    await controller.receive(signedRequest({ submissionId, providerId, status: 'succeeded', storageKey, template }));
+  }
+  assert.deepEqual(calls.map(result => result.outcome.template), ['VideoAdResultFirst', 'ProductAdNative', undefined]);
+});
+
+test('photo templates get at most three photos, the first one as the main photo', async () => {
+  const images = ['1', '2', '3', '4', '5'].map(n => `https://storage.test/${n}.jpg`);
+  const props = ProductAdPolicy.buildProps({ product: { name: 'A', price: null, oldPrice: null }, copy: validCopy, imageUrls: images, primaryColor: '#000000' });
+  assert.equal(props.product.imageUrl, images[0]);
+  assert.deepEqual(props.product.imageUrls, images.slice(0, 3));
+
+  const h = remotionHarness();
+  await h.provider.render({ ...request, mediaUrls: images });
+  await h.event;
+  assert.deepEqual(h.renders[0].props.product.imageUrls, images.slice(0, 3), 'a content with five photos renders the first three');
+});
+
+test('RemotionVideoProvider places the photos in the scenes of the drawn template following its saved setting', async () => {
+  const h = remotionHarness();
+  const mediaUrls = ['https://storage.test/produto-1.jpg', 'https://storage.test/produto-2.jpg', 'https://storage.test/pessoa-1.jpg'];
+  await h.provider.render({ ...request, mediaUrls, mediaKinds: ['PRODUCT', 'PRODUCT', 'PERSON'], imageSlots: { ProductAdStory: ['PERSON', 'PRODUCT', 'PRODUCT'], ProductAdNative: ['PRODUCT', 'PRODUCT', 'PRODUCT'] } });
+  await h.event;
+  assert.equal(h.renders[0].compositionId, 'ProductAdStory-9x16');
+  assert.deepEqual(h.renders[0].props.product.imageUrls, [mediaUrls[2], mediaUrls[0], mediaUrls[1]], 'the person photo opens, as configured for ProductAdStory');
+  assert.equal(h.renders[0].props.product.imageUrl, mediaUrls[2]);
+
+  const plain = remotionHarness();
+  await plain.provider.render({ ...request, mediaUrls, mediaKinds: ['PRODUCT', 'PRODUCT', 'PERSON'], imageSlots: { ProductAdNative: ['PERSON', 'PERSON', 'PERSON'] } });
+  await plain.event;
+  assert.deepEqual(plain.renders[0].props.product.imageUrls, mediaUrls, 'a template without setting keeps the content order');
+});
+
+test('RemotionVideoProvider uses the template chosen at generation when it fits the content type, and draws otherwise', async () => {
+  const chosen = remotionHarness({ random: 0.1 });
+  await chosen.provider.render({ ...request, template: 'ProductAdReveal' });
+  await chosen.event;
+  assert.equal(chosen.renders[0].compositionId, 'ProductAdReveal-9x16');
+
+  const wrongType = remotionHarness({ random: 0.1 });
+  await wrongType.provider.render({ ...request, template: 'VideoAdCaptions' });
+  await wrongType.event;
+  assert.equal(wrongType.renders[0].compositionId, 'ProductAdStory-9x16', 'a video template on photo content falls back to the draw');
+});
+
+test('RemotionVideoProvider passes the brand logo to photo and video templates', async () => {
+  const photo = remotionHarness();
+  await photo.provider.render({ ...request, logoUrl: 'https://storage.test/logo.png' });
+  await photo.event;
+  assert.equal(photo.renders[0].props.brand.logoUrl, 'https://storage.test/logo.png');
+
+  const video = remotionHarness();
+  await video.provider.render({ ...request, mediaUrls: ['https://storage.test/a.mp4'], mediaType: 'VIDEO', logoUrl: 'https://storage.test/logo.png' });
+  await video.event;
+  assert.equal(video.renders[0].props.brand.logoUrl, 'https://storage.test/logo.png');
+
+  const none = remotionHarness();
+  await none.provider.render(request);
+  await none.event;
+  assert.equal('logoUrl' in none.renders[0].props.brand, false, 'a brand without logo sends none');
+});
+
+const { ElevenLabsSpeechProvider, lineCuts } = require('../dist/modules/video-generation/infra/providers/elevenlabs-speech.provider');
+
+test('ElevenLabsSpeechProvider asks for 44.1 kHz MP3 with the configured voice and returns it untouched', async () => {
+  process.env.ELEVENLABS_API_KEY = 'xi-test';
+  process.env.ELEVENLABS_VOICE_ID = 'voz-br';
+  const speech = new ElevenLabsSpeechProvider(config({}));
+  const calls = [];
+  speech.fetch = async (url, init) => { calls.push({ url: String(url), init }); return new Response(Buffer.alloc(4800), { status: 200 }); };
+  const audio = await speech.synthesize({ text: 'Corra mais leve.\nTecido leve.\n\nCompre agora.', style: 'Enérgico' });
+  assert.equal(calls[0].url, 'https://api.elevenlabs.io/v1/text-to-speech/voz-br?output_format=mp3_44100_128');
+  assert.equal(calls[0].init.headers['xi-api-key'], 'xi-test');
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.text, 'Corra mais leve. Tecido leve. Compre agora.', 'no break tags: they turned into gibberish instead of silence');
+  assert.deepEqual([speech.singleTake, speech.audioFormat, speech.tempo], [false, 'mp3', 1], 'no silence-based take, MP3 audio, natural speed');
+  assert.equal(body.model_id, 'eleven_multilingual_v2');
+  assert.equal(JSON.stringify(body).includes('Enérgico'), false, 'ElevenLabs takes no text instructions: the voice defines the style');
+  assert.equal(audio.length, 4800, 'the MP3 goes as is to the FFmpeg');
+});
+
+test('ElevenLabsSpeechProvider sends the neighbor lines as context for a continuous intonation', async () => {
+  process.env.ELEVENLABS_API_KEY = 'xi-test';
+  process.env.ELEVENLABS_VOICE_ID = 'voz-br';
+  const speech = new ElevenLabsSpeechProvider(config({}));
+  const bodies = [];
+  speech.fetch = async (url, init) => { bodies.push(JSON.parse(init.body)); return new Response(Buffer.alloc(2), { status: 200 }); };
+  await speech.synthesize({ text: 'Tecido leve.', previousText: 'Corra mais leve.', nextText: 'Compre agora.' });
+  await speech.synthesize({ text: 'Corra mais leve.' });
+  assert.deepEqual([bodies[0].previous_text, bodies[0].next_text], ['Corra mais leve.', 'Compre agora.']);
+  assert.equal('previous_text' in bodies[1], false);
+});
+
+test('RemotionVideoProvider records one line per call, with neighbors as context, when the speech service cannot do a single take', async () => {
+  const h = remotionHarness();
+  const synthesize = h.provider.speechProvider.synthesize;
+  h.provider.speechProvider = { singleTake: false, synthesize };
+  let transcribed = false;
+  h.provider.transcriptionProvider.transcribe = async () => { transcribed = true; return []; };
+  await h.provider.render({ ...request, audio: { backgroundMusic: false, voiceover: true } });
+  assert.equal((await h.event).status, 'succeeded');
+  const lines = [validCopy.headline, ...validCopy.bullets, validCopy.cta];
+  assert.deepEqual(h.spoken.map(call => call.text), lines, 'one call per line, no single take');
+  assert.deepEqual(h.spoken.map(call => [call.previousText, call.nextText]), lines.map((_, index) => [lines[index - 1], lines[index + 1]]));
+  assert.equal(transcribed, false, 'no transcription is needed to cut the take');
+});
+
+test('ElevenLabsSpeechProvider explains quota, invalid key and empty audio, and validates the text length', async () => {
+  process.env.ELEVENLABS_API_KEY = 'xi-test';
+  process.env.ELEVENLABS_VOICE_ID = 'voz-br';
+  const speech = new ElevenLabsSpeechProvider(config({ ELEVENLABS_MODEL: 'eleven_turbo_v2_5' }));
+  speech.fetch = async () => Response.json({ detail: { status: 'quota_exceeded', message: 'x' } }, { status: 401 });
+  await assert.rejects(speech.synthesize({ text: 'Oi' }), /limite de uso ou falta de créditos/);
+  speech.fetch = async () => Response.json({ detail: { status: 'payment_required', code: 'paid_plan_required' } }, { status: 402 });
+  await assert.rejects(speech.synthesize({ text: 'Oi' }), /biblioteca da ElevenLabs e só pode ser usada pela API num plano pago/);
+  speech.fetch = async () => Response.json({ detail: { status: 'invalid_api_key' } }, { status: 401 });
+  await assert.rejects(speech.synthesize({ text: 'Oi' }), /ELEVENLABS_API_KEY/);
+  speech.fetch = async () => new Response(Buffer.alloc(0), { status: 200 });
+  await assert.rejects(speech.synthesize({ text: 'Oi' }), /áudio vazio/);
+  await assert.rejects(speech.synthesize({ text: 'x'.repeat(501) }), /entre 1 e 500/);
+  let model;
+  speech.fetch = async (url, init) => { model = JSON.parse(init.body).model_id; return new Response(Buffer.alloc(2), { status: 200 }); };
+  await speech.synthesize({ text: 'Oi' });
+  assert.equal(model, 'eleven_turbo_v2_5');
+});
+
+test('ElevenLabsSpeechProvider uses the playground settings, skips the context the Eleven v3 refuses and sends the language', async () => {
+  process.env.ELEVENLABS_API_KEY = 'xi-test';
+  process.env.ELEVENLABS_VOICE_ID = 'sarah';
+  const bodies = [];
+  const fetchStub = async (url, init) => { bodies.push(JSON.parse(init.body)); return new Response(Buffer.alloc(2), { status: 200 }); };
+  const v3 = new ElevenLabsSpeechProvider(config({ ELEVENLABS_MODEL: 'eleven_v3' }));
+  v3.fetch = fetchStub;
+  await v3.synthesize({ text: 'Proibido comer uma só!', previousText: 'Oi', nextText: 'Tchau' });
+  assert.deepEqual(bodies[0].voice_settings, { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true }, 'defaults match the approved playground: Natural stability, 75% similarity, no style exaggeration');
+  assert.equal('previous_text' in bodies[0] || 'next_text' in bodies[0], false, 'eleven_v3 refuses previous_text/next_text');
+  assert.equal(bodies[0].language_code, 'pt');
+  assert.equal(bodies[0].text, 'Proibido comer uma só.', 'the exclamation that makes v3 laugh becomes a period only in the spoken text');
+
+  const v2 = new ElevenLabsSpeechProvider(config({ ELEVENLABS_STABILITY: '0.8', ELEVENLABS_SIMILARITY: '2', ELEVENLABS_STYLE: 'x' }));
+  v2.fetch = fetchStub;
+  await v2.synthesize({ text: 'Tecido leve.', previousText: 'Corra mais leve!' });
+  assert.deepEqual(bodies[1].voice_settings, { stability: 0.8, similarity_boost: 0.75, style: 0, use_speaker_boost: true }, 'valid values come from .env; out-of-range ones fall back');
+  assert.equal(bodies[1].previous_text, 'Corra mais leve.');
+  assert.equal('language_code' in bodies[1], false, 'multilingual v2 takes no language_code');
+});
+
+test('speakable removes laugh triggers from the text sent to the voice', () => {
+  const { speakable } = require('../dist/modules/video-generation/infra/providers/elevenlabs-speech.provider');
+  assert.equal(speakable('Bateu a fome?! Tem salgado da Lu!!'), 'Bateu a fome? Tem salgado da Lu.');
+  assert.equal(speakable('Hahaha que delícia kkkk rsrs!'), 'que delícia.');
+  assert.equal(speakable('Vidro manchado de novo?'), 'Vidro manchado de novo?');
+});
+
+// Alinhamento falso: cada caractere dura 0,05 s e cada espaço entre frases tem um respiro de 0,2 s.
+function fakeAlignment (text) {
+  const characters = [...text]; const starts = []; const ends = []; let time = 0;
+  characters.forEach((char, index) => { const breath = char === ' ' && /[.?]/.test(characters[index - 1] ?? ''); starts.push(time); time += breath ? 0.2 : 0.05; ends.push(time); });
+  return { characters, character_start_times_seconds: starts, character_end_times_seconds: ends };
+}
+
+test('ElevenLabsSpeechProvider records the whole script in one natural take and cuts it by the character timestamps', async () => {
+  process.env.ELEVENLABS_API_KEY = 'xi-test';
+  process.env.ELEVENLABS_VOICE_ID = 'roberta';
+  const speech = new ElevenLabsSpeechProvider(config({ ELEVENLABS_MODEL: 'eleven_v3' }));
+  const calls = [];
+  const lines = ['Proibido comer uma só!', 'Tecido leve.', 'Compre agora.'];
+  const spoken = 'Proibido comer uma só. Tecido leve. Compre agora.';
+  speech.fetch = async (url, init) => { calls.push({ url: String(url), body: JSON.parse(init.body) }); return Response.json({ audio_base64: Buffer.from('mp3-take').toString('base64'), alignment: fakeAlignment(spoken) }); };
+  const { audio, cuts } = await speech.synthesizeTake(lines);
+  assert.equal(calls[0].url, 'https://api.elevenlabs.io/v1/text-to-speech/roberta/with-timestamps?output_format=mp3_44100_128');
+  assert.equal(calls[0].body.text, spoken, 'one call with the whole script, no forced pauses');
+  assert.equal(audio.toString(), 'mp3-take');
+  assert.deepEqual(cuts, lineCuts(['Proibido comer uma só.', 'Tecido leve.', 'Compre agora.'], fakeAlignment(spoken)));
+  assert.equal(cuts.length, 2);
+  assert.ok(cuts[0] > 1.0 && cuts[0] < 1.3 && cuts[1] > 1.7 && cuts[1] < 2.1, `each cut falls in the breath between lines: ${cuts}`);
+
+  assert.throws(() => lineCuts(['a', 'b'], { characters: ['x'], character_start_times_seconds: [0], character_end_times_seconds: [1] }), /tempo de cada trecho/, 'an alignment that does not match the text is refused');
+});
+
+test('RemotionVideoProvider cuts the aligned take at natural speed, without transcription', async () => {
+  const h = remotionHarness();
+  const lines = [validCopy.headline, ...validCopy.bullets, validCopy.cta];
+  let transcribed = false;
+  h.provider.transcriptionProvider.transcribe = async () => { transcribed = true; return []; };
+  const tempos = [];
+  const tighten = h.provider.voiceClips.tighten;
+  h.provider.voiceClips.tighten = async (input, output, range, tempo) => { tempos.push(tempo); return tighten(input, output, range); };
+  h.provider.speechProvider = { singleTake: false, audioFormat: 'mp3', tempo: 1, synthesize: async () => { throw new Error('não deveria gravar frase a frase'); }, synthesizeTake: async received => { assert.deepEqual(received, lines); return { audio: Buffer.from('take'), cuts: [1.2, 2.4, 3.6] }; } };
+  await h.provider.render({ ...request, audio: { backgroundMusic: false, voiceover: true } });
+  assert.equal((await h.event).status, 'succeeded');
+  assert.deepEqual(h.tightened, [{ start: 0, end: 1.2 }, { start: 1.2, end: 2.4 }, { start: 2.4, end: 3.6 }, { start: 3.6 }]);
+  assert.deepEqual(tempos, [1, 1, 1, 1], 'no speed-up for this voice');
+  assert.equal(transcribed, false);
 });

@@ -1,8 +1,8 @@
 import React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, ProductImage, optionalColor, readableOn, safeColor, useEnter, useLayout } from './shared';
-import { AdAudio, AudioCues } from './audio';
+import type { ProductAdProps } from '../../../../src/modules/video-generation/domain/entities/product-ad';
+import { imageAt, FONT_FAMILY, ProductImage, optionalColor, readableOn, safeColor, useEnter, useLayout } from '../shared';
+import { AdAudio, AudioCues } from '../audio';
 
 // Tipografia em movimento: palavras grandes, cortes rápidos e as cores da marca alternando a cada tela.
 // Linha do tempo (30 fps, 450 frames = 15 s). Cada benefício fica uma tela inteira, no ritmo da locução.
@@ -22,13 +22,13 @@ export const ProductAdKinetic: React.FC<ProductAdProps> = ({ copy, product, bran
         <HeadlineScene headline={copy.headline} color={color} />
       </Sequence>
       <Sequence from={SCENES.reveal[0]} durationInFrames={SCENES.reveal[1]} name="Reveal">
-        <RevealScene imageUrl={product.imageUrl} name={product.name} color={color} />
+        <RevealScene imageUrl={imageAt(product, 0)} name={product.name} color={color} />
       </Sequence>
       <Sequence from={SCENES.benefits[0]} durationInFrames={SCENES.benefits[1]} name="Benefits">
-        <BenefitsScene imageUrl={product.imageUrl} bullets={copy.bullets} colors={[accent, color]} duration={SCENES.benefits[1]} />
+        <BenefitsScene imageUrl={imageAt(product, 1)} bullets={copy.bullets} colors={[accent, color]} duration={SCENES.benefits[1]} />
       </Sequence>
       <Sequence from={SCENES.price[0]} durationInFrames={SCENES.price[1]} name="Price">
-        <PriceScene imageUrl={product.imageUrl} name={product.name} price={product.price} oldPrice={product.oldPrice} color={color} />
+        <PriceScene imageUrl={imageAt(product, 2)} name={product.name} price={product.price} oldPrice={product.oldPrice} color={color} />
       </Sequence>
       <Sequence from={SCENES.cta[0]} durationInFrames={SCENES.cta[1]} name="CTA">
         <CtaScene cta={copy.cta} logoUrl={brand.logoUrl} color={color} accent={accent} />

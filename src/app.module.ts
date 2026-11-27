@@ -6,6 +6,7 @@ import { CampaignModule } from './modules/campaign/campaign.module';
 import { CampaignRulesModule } from './modules/campaign-rules/campaign-rules.module';
 import { ContentModule } from './modules/content/content.module';
 import { IdentityModule } from './modules/identity/identity.module';
+import { ImageTemplateModule } from './modules/image-template/image-template.module';
 import { MediaAssetModule } from './modules/media-asset/media-asset.module';
 import { ProductModule } from './modules/product/product.module';
 import { PublicationModule } from './modules/publication/publication.module';
@@ -18,7 +19,7 @@ import { RequestContextModule } from './shared/core/request-context/request-cont
   imports: [
     ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RequestContextModule, ScheduleModule.forRoot(),
     IdentityModule, BrandModule, CampaignModule, CampaignRulesModule, ProductModule, MediaAssetModule,
-    ContentModule, VideoGenerationModule, SocialAccountModule, PublicationModule,
+    ContentModule, VideoGenerationModule, SocialAccountModule, PublicationModule, ImageTemplateModule,
   ],
 })
 export class AppModule {}

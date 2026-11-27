@@ -30,10 +30,6 @@ export class PublishScheduledContentUseCase {
       return this.publicationRepository.markFailed(job, 'A conta precisa ter uma credencial ativa para publicar.');
     }
 
-    if (!PublicationPolicy.isWithinGraceWindow(schedule.date, Date.now())) {
-      return this.publicationRepository.markFailed(job, 'O prazo da publicação expirou.');
-    }
-
     if (!schedule.contentId) {
       return this.publicationRepository.markFailed(job, 'O conteúdo da publicação não foi criado.');
     }
@@ -48,10 +44,21 @@ export class PublishScheduledContentUseCase {
       return this.publicationRepository.markFailed(job, 'Use um vídeo aprovado da revisão atual do conteúdo.');
     }
 
+    // Revisão humana: conteúdo reprovado não vai ao ar; o que ainda aguarda revisão espera até o fim da tolerância.
+    if (state.humanApprove === false) {
+      return this.publicationRepository.markFailed(job, 'O conteúdo foi reprovado na revisão humana.');
+    }
+
+    if (!PublicationPolicy.isWithinGraceWindow(schedule.date, Date.now())) {
+      const reason = state.humanApprove === true ? 'O prazo da publicação expirou.' : 'O conteúdo não foi aprovado na revisão humana a tempo.';
+      return this.publicationRepository.markFailed(job, reason);
+    }
+
+    if (state.humanApprove !== true) return this.publicationRepository.releaseProcessing(job);
+
     if (!schedule.videoId) await this.publicationRepository.attachApprovedVideo(job, state.video.id);
 
-    // O envio ao Instagram permanece desativado.
-    return this.publicationRepository.releaseProcessing(job);
+    return this.execute(job, state.video.storageKey, credential);
   }
 
   async execute (job: PublicationWork, videoKey: string, credential: EncryptedToken) {

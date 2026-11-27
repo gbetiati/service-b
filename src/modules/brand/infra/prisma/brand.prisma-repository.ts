@@ -28,12 +28,24 @@ export class PrismaBrandRepository implements BrandRepository {
     return rows.map(row => this.toDomain(row));
   }
 
+  updateLogo (id: string, logoStorageKey: string | null) {
+    const where = { companyId_id: { companyId: this.requestContext.companyId, id } };
+    return this.prismaService.$transaction(async tx => {
+      const brand = await tx.brand.findUnique({ where, select: { logoStorageKey: true } });
+
+      if (!brand) return null;
+
+      await tx.brand.update({ where, data: { logoStorageKey } });
+      return { previous: brand.logoStorageKey };
+    });
+  }
+
   delete (id: string) {
     const companyId = this.requestContext.companyId;
     return this.prismaService.serializable(async tx => {
       const brand = await tx.brand.findUnique({
         where: { companyId_id: { companyId, id } },
-        select: { campaigns: { select: { id: true } }, products: { select: { id: true, media: { select: { storageKey: true } } } } },
+        select: { logoStorageKey: true, campaigns: { select: { id: true } }, products: { select: { id: true, media: { select: { storageKey: true } } } } },
       });
 
       if (!brand) return null;
@@ -41,14 +53,15 @@ export class PrismaBrandRepository implements BrandRepository {
       const productIds = brand.products.map(product => product.id);
       await assertCatalogUnused(tx, companyId, { campaignIds: brand.campaigns.map(campaign => campaign.id), productIds }, 'A marca é usada');
       await tx.brand.delete({ where: { companyId_id: { companyId, id } } });
-      return brand.products.flatMap(product => product.media.map(media => media.storageKey));
+      const media = brand.products.flatMap(product => product.media.map(item => item.storageKey));
+      return brand.logoStorageKey ? [...media, brand.logoStorageKey] : media;
     });
   }
 
   private toDomain (row: Row) {
     return new Brand(
       row.id, row.companyId, row.name, row.createdAt, row.updatedAt,
-      row.primaryColor, row.secondaryColor, row.tertiaryColor, row.quaternaryColor, row.voiceTone, row.targetAudience, row.copyGuidelines,
+      row.primaryColor, row.secondaryColor, row.tertiaryColor, row.quaternaryColor, row.voiceTone, row.targetAudience, row.copyGuidelines, row.logoStorageKey,
     );
   }
 }

@@ -3,6 +3,7 @@ import { StorageModule } from '@/shared/libs/storage/storage.module';
 import { ProductModule } from '../product/product.module';
 import { GetMediaAssetUrlUseCase } from './application/use-cases/get-media-asset-url.usecase';
 import { ListMediaAssetsUseCase } from './application/use-cases/list-media-assets.usecase';
+import { UpdateMediaAssetKindUseCase } from './application/use-cases/update-media-asset-kind.usecase';
 import { UploadMediaAssetUseCase } from './application/use-cases/upload-media-asset.usecase';
 import { ImageProcessorProvider } from './domain/providers/image-processor.provider';
 import { VideoFileInspector } from './domain/providers/video-file-inspector.provider';
@@ -16,7 +17,7 @@ import { SharpImageProcessorProvider } from './infra/providers/sharp-image-proce
   imports: [ProductModule, StorageModule],
   controllers: [MediaAssetController],
   providers: [
-    GetMediaAssetUrlUseCase, ListMediaAssetsUseCase, UploadMediaAssetUseCase,
+    GetMediaAssetUrlUseCase, ListMediaAssetsUseCase, UpdateMediaAssetKindUseCase, UploadMediaAssetUseCase,
     { provide: MediaAssetRepository, useClass: PrismaMediaAssetRepository },
     { provide: ImageProcessorProvider, useClass: SharpImageProcessorProvider },
     { provide: VideoFileInspector, useClass: FfprobeVideoFileInspector },

@@ -5,7 +5,8 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
 import { internalWebhookUrl, requiredEnv } from '@/shared/core/config';
 import { AppError } from '@/shared/core/errors/app.error';
-import { COPYWRITING_GUIDE, COPYWRITING_RULES } from '@/shared/libs/ai/copywriting.prompt';
+import { COPYWRITING_GUIDE, COPYWRITING_RULES, VIDEO_COPYWRITING_GUIDE } from '@/shared/libs/ai/copywriting.prompt';
+import { ContentMediaType } from '../../domain/entities/content-media-type';
 import { SignedWebhookClient } from '@/shared/libs/http/signed-webhook.client';
 import { AD_SCRIPT_LIMITS, AdScript, adScriptViolation, formatAdScript } from '../../domain/entities/ad-script';
 import { ScriptContext, ScriptProvider, ScriptResult } from '../../domain/providers/script.provider';
@@ -93,7 +94,7 @@ export class ClaudeScriptProvider implements ScriptProvider {
       response = await this.anthropic.beta.messages.parse({
         model,
         max_tokens: 4000,
-        system: SYSTEM_PROMPT,
+        system: context.mediaType === ContentMediaType.VIDEO ? `${SYSTEM_PROMPT}\n\n${VIDEO_COPYWRITING_GUIDE}` : SYSTEM_PROMPT,
         messages: [{ role: 'user', content: `<contexto>\n${JSON.stringify(context)}\n</contexto>\n\nEscreva o roteiro do vídeo.` }],
         output_config: { effort: 'medium', format: betaZodOutputFormat(AdScriptSchema) },
         ...(fallbacks && { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }),

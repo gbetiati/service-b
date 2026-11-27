@@ -127,7 +127,7 @@ test('preparation records a stage failure without starting later work', async ()
   ]);
 });
 
-test('the scheduler calls the publication repository only for ready content with a schedule', { skip: 'TESTE (mock): validações e publicação comentadas; reative junto com o código' }, async () => {
+test('the scheduler calls the publication repository only for ready content with a schedule', async () => {
   const { PublicationScheduler } = require('../dist/modules/publication/infra/schedule/publication.scheduler');
   const effects = [];
   const candidates = ['pending', 'failed', 'ready', 'unscheduled'].map(contentId => ({
@@ -237,9 +237,41 @@ test('video file names carry a zero-padded sequence number and only a safe templ
   assert.equal(VideoAsset.storageKeyFor('c', 'k', 'g'), 'c/contents/k/videos/g.mp4');
 });
 
-test('render inputs saved before the rename read their script context from the old brief key', () => {
+test('render inputs saved before the renames read their script context from brief and their photos from imageKeys', () => {
   const { renderInput } = require('../dist/modules/video-generation/infra/prisma/video-generation.prisma-repository');
   const context = { brand: 'Marca', objective: null, guidelines: 'g', products: ['P'] };
-  assert.deepEqual(renderInput({ script: 's', imageKeys: [], brief: context }), { script: 's', imageKeys: [], context });
-  assert.deepEqual(renderInput({ script: 's', imageKeys: [], context }), { script: 's', imageKeys: [], context });
+  assert.deepEqual(renderInput({ script: 's', imageKeys: ['a.jpg'], brief: context }), { script: 's', mediaKeys: ['a.jpg'], context });
+  assert.deepEqual(renderInput({ script: 's', imageKeys: [], context }), { script: 's', mediaKeys: [], context });
+  assert.deepEqual(renderInput({ script: 's', mediaKeys: ['v.mp4'], mediaType: 'VIDEO', context }), { script: 's', mediaKeys: ['v.mp4'], mediaType: 'VIDEO', context });
+});
+
+test('the publication phase waits for the human review and publishes only approved content', async () => {
+  const { ContentStatus } = require('../dist/modules/content/domain/entities/content-status');
+  const credential = { expiresAt: new Date(Date.now() + 86_400_000), encryptedValue: 'x', initializationVector: 'y' };
+  const ready = { status: ContentStatus.READY, revision: 2, scriptStatus: 'READY', videoStatus: 'READY', transcriptionStatus: 'READY', subtitleStatus: 'READY',
+    video: { id: 'video', revision: 2, reviewStatus: ContentStatus.APPROVED, storageKey: 'videos/v.mp4' } };
+  const run = async (humanApprove, date = new Date(Date.now() - 1000)) => {
+    const job = { id: 'publication', companyId: 'company', accountActive: true, accountExternalId: 'ig', credential, caption: 'Legenda', containerId: null, schedule: { id: 'schedule', contentId: 'content', videoId: null, date } };
+    const effects = [];
+    const publisher = new PublishScheduledContentUseCase(
+      {
+        reserveForProcessing: async () => job,
+        markFailed: async (_, reason) => effects.push(['failed', reason]),
+        releaseProcessing: async (_, container) => effects.push(['release', container]),
+        attachApprovedVideo: async (_, videoId) => effects.push(['attach', videoId]),
+      },
+      { createVideo: async (account, token, url, caption) => { effects.push(['instagram', account, token, url, caption]); return 'container-1'; } },
+      { decrypt: () => 'token' },
+      { url: async key => `https://s3/${key}` },
+      { read: async () => ({ ...ready, humanApprove }) },
+    );
+    await publisher.processScheduled(job.id);
+    return effects;
+  };
+
+  assert.deepEqual(await run(false), [['failed', 'O conteúdo foi reprovado na revisão humana.']]);
+  assert.deepEqual(await run(null), [['release', undefined]], 'awaiting review: tries again on the next tick');
+  assert.deepEqual(await run(null, new Date(Date.now() - PUBLICATION_GRACE_MS - 1000)), [['failed', 'O conteúdo não foi aprovado na revisão humana a tempo.']]);
+  assert.deepEqual(await run(true), [['attach', 'video'], ['instagram', 'ig', 'token', 'https://s3/videos/v.mp4', 'Legenda'], ['release', 'container-1']], 'approved: the video goes to Instagram');
+  assert.deepEqual(await run(true, new Date(Date.now() - PUBLICATION_GRACE_MS - 1000)), [['failed', 'O prazo da publicação expirou.']]);
 });

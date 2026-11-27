@@ -29,6 +29,8 @@ type Fetch = typeof fetch;
 // funciona pela Realtime API, que exige um novo provider. Áudio em WAV: ainda vai ser cortado e mixado.
 @Injectable()
 export class OpenAiSpeechProvider implements SpeechProvider {
+  readonly singleTake = true;
+  readonly audioFormat = 'wav';
   private readonly logger = new Logger(OpenAiSpeechProvider.name);
   protected fetch: Fetch = (input, init) => fetch(input, init);
 
@@ -43,7 +45,7 @@ export class OpenAiSpeechProvider implements SpeechProvider {
 
     const apiKey = requiredEnv('OPENAI_API_KEY');
     const model = this.config.get<string>('OPENAI_TTS_MODEL')?.trim() || 'gpt-4o-mini-tts';
-    const voice = this.config.get<string>('OPENAI_TTS_VOICE')?.trim() || 'marin';
+    const voice = this.config.get<string>('OPENAI_TTS_VOICE')?.trim() || 'ash';
     // O tom da marca ajusta o estilo, sem mudar o ritmo nem as pausas, das quais depende a separação dos trechos.
     const instructions = style?.trim() ? `${BASE_INSTRUCTIONS}\nBrand style (adjust tone only, keep pacing and pauses above): ${style.trim()}` : BASE_INSTRUCTIONS;
 

@@ -1,11 +1,14 @@
 import React from 'react';
-import { AbsoluteFill, Img, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadFont } from '@remotion/fonts';
 
 export const FONT_FAMILY = 'Inter';
+// Letra manuscrita (Caveat, licença OFL) para anotações à mão, como as que os criadores escrevem por cima do vídeo.
+export const HAND_FONT = 'Caveat';
 
-// Fonte local (video/public/fonts): o render não depende de rede para tipografia.
+// Fontes locais (video/public/fonts): o render não depende de rede para tipografia.
 loadFont({ family: FONT_FAMILY, url: staticFile('fonts/Inter.ttf'), weight: '100 900' });
+loadFont({ family: HAND_FONT, url: staticFile('fonts/Caveat.ttf'), weight: '400 700' });
 
 // `unit` escala medidas pensadas para 1080 px no menor lado do vídeo, para o mesmo layout servir aos três formatos.
 export function useLayout () {
@@ -25,6 +28,49 @@ export const ProductImage: React.FC<{ imageUrl: string; zoom: number; dim?: numb
     {dim > 0 && <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${dim})` }} />}
   </AbsoluteFill>
 );
+
+// Fotos do produto para os templates de foto (de 1 a 3, a principal primeiro). `imageAt` devolve a foto da cena
+// `index` e volta ao começo quando há menos fotos que cenas: com uma foto só, todas as cenas usam a mesma, como antes.
+export function productImages (product: { imageUrl: string; imageUrls?: string[] }) {
+  return product.imageUrls?.length ? product.imageUrls : [product.imageUrl];
+}
+
+export function imageAt (product: { imageUrl: string; imageUrls?: string[] }, index: number) {
+  const images = productImages(product);
+  return images[((index % images.length) + images.length) % images.length];
+}
+
+// Selo com o logo da marca nos primeiros segundos, no canto superior direito da área segura: os textos dos templates
+// ficam centralizados, então esse canto fica livre. O fundo branco translúcido mantém legível um logo escuro sobre foto
+// escura. Entra já no frame 0 e sai em fade até `until`; o logo do fim fica na cena de fechamento de cada template.
+// Altura reservada no topo da área segura enquanto o selo do logo está na tela: as cenas de abertura descem o texto
+// por essa altura quando há logo, para a headline nunca passar por baixo do selo.
+export const LOGO_BUG_SPACE = 175;
+
+export const LogoBug: React.FC<{ logoUrl?: string; until?: number }> = ({ logoUrl, until = 75 }) => {
+  const frame = useCurrentFrame();
+  const safe = useSafeArea();
+  const { unit } = useLayout();
+
+  if (!logoUrl || frame >= until) return null;
+
+  const fade = interpolate(frame, [until - 15, until], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return <LogoBadge logoUrl={logoUrl} height={120} style={{ position: 'absolute', top: safe.top + 8 * unit, right: safe.right, opacity: fade, transform: `translateY(${(1 - fade) * -12 * unit}px)` }} />;
+};
+
+// Logo numa placa branca translúcida, para ler sobre qualquer foto ou cor da marca. Usado no selo do começo e no
+// fechamento dos templates. `height` é a altura máxima do logo, em px para o lado menor de 1080.
+export const LogoBadge: React.FC<{ logoUrl: string; height: number; style?: React.CSSProperties }> = ({ logoUrl, height, style }) => {
+  const { unit } = useLayout();
+  return (
+    <div style={{
+      display: 'inline-flex', padding: `${height * 0.14 * unit}px ${height * 0.22 * unit}px`, borderRadius: height * 0.24 * unit,
+      backgroundColor: 'rgba(255,255,255,0.88)', boxShadow: `0 ${6 * unit}px ${18 * unit}px rgba(0,0,0,0.25)`, ...style,
+    }}>
+      <Img src={logoUrl} style={{ display: 'block', maxWidth: height * 2.4 * unit, maxHeight: height * unit, objectFit: 'contain' }} />
+    </div>
+  );
+};
 
 export function isHex (value: string) {
   return /^#[0-9a-f]{6}$/i.test(value);

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AppError, requireRecord } from '@/shared/core/errors/app.error';
 import { ContentAsset } from './content-asset.entity';
+import { ContentMediaType, mediaMatchesType, mediaTypeLabel } from './content-media-type';
 import { ContentStatus } from './content-status';
 import type { BrandVoice, ScriptContext } from '../providers/script.provider';
 
@@ -32,6 +33,8 @@ export type ContentFields = {
   aiScript: string;
   editorial: Editorial;
   audio: ContentAudio;
+  // Fotos ou vídeos: define quais mídias o conteúdo aceita e quais templates montam o anúncio.
+  contentMediaType: ContentMediaType;
   assets: ContentAsset[];
 };
 
@@ -46,13 +49,15 @@ export type ReferencedBrand = {
   voiceTone: string | null;
   targetAudience: string | null;
   copyGuidelines: string | null;
+  logoStorageKey?: string | null;
 };
 
 export type ContentReferences = {
   campaign: { brandId: string; objective: string | null; brand: ReferencedBrand | null } | null;
   rule: { campaingId: string; guidelines: string } | null;
   products: { id: string; brandId: string; name: string; description: string | null }[];
-  images: { id: string; productId: string; storageKey: string }[];
+  // Mídias associadas ao conteúdo, de qualquer tipo; validateReferences confere se batem com contentMediaType.
+  media: { id: string; productId: string; storageKey: string; contentType: string; kind: string }[];
 };
 
 export class Content {
@@ -69,6 +74,8 @@ export class Content {
     readonly transcriptionStatus: PreparationStatus = 'NOT_STARTED',
     readonly transcription: string | null = null,
     readonly subtitleStatus: PreparationStatus = 'NOT_STARTED',
+    // Revisão humana da revisão atual: true aprovado, false reprovado, null aguardando (todo conteúdo novo ou revisado).
+    readonly humanApprove: boolean | null = null,
   ) {}
 
   static create (companyId: string, fields: ContentFields) {
@@ -89,6 +96,14 @@ export class Content {
     return new Content(this.id, this.companyId, fields, this.revision + 1, ContentStatus.WAITING, this.createdAt, new Date(), Content.scriptStatusFor(fields.aiScript), 'NOT_STARTED');
   }
 
+  // Aprovação ou reprovação humana da revisão informada (a que a pessoa viu). Aprovar exige o vídeo pronto: é ele que
+  // vai ao ar. Reprovar vale a qualquer momento.
+  assertReviewable (revision: number, approved: boolean) {
+    this.assertRevision(revision);
+
+    if (approved && this.videoStatus !== 'READY') throw new AppError('conflict', 'Gere o vídeo do conteúdo antes de aprová-lo.');
+  }
+
   // Cria a próxima revisão mantendo os campos que não foram alterados.
   reviseWith ({ mediaAssetIds, ...changes }: ContentFieldChanges) {
     const { fields } = this;
@@ -96,7 +111,7 @@ export class Content {
       campaingId: changes.campaingId ?? fields.campaingId, campaingRulesId: changes.campaingRulesId ?? fields.campaingRulesId,
       productId: changes.productId ?? fields.productId, productIds: changes.productIds ?? fields.productIds,
       aiScript: changes.aiScript ?? fields.aiScript, editorial: changes.editorial ?? fields.editorial,
-      audio: mergeAudio(fields.audio, changes.audio),
+      audio: mergeAudio(fields.audio, changes.audio), contentMediaType: changes.contentMediaType ?? fields.contentMediaType,
       assets: mediaAssetIds ? ContentAsset.fromMediaAssetIds(mediaAssetIds) : fields.assets,
     });
   }
@@ -109,7 +124,7 @@ export class Content {
     return [this.fields.productId, ...this.fields.productIds];
   }
 
-  validateReferences ({ campaign, rule, products, images }: ContentReferences) {
+  validateReferences ({ campaign, rule, products, media }: ContentReferences) {
     const productIds = this.allProductIds;
     const { brandId, brand, objective } = requireRecord(campaign, 'Campanha');
 
@@ -117,8 +132,14 @@ export class Content {
       throw new AppError('invalid', 'A regra deve pertencer à campanha.');
     }
 
-    if (images.length !== this.fields.assets.length || images.some(image => !productIds.includes(image.productId))) {
-      throw new AppError('invalid', 'As imagens devem pertencer aos produtos selecionados.');
+    if (media.length !== this.fields.assets.length || media.some(item => !productIds.includes(item.productId))) {
+      throw new AppError('invalid', 'As mídias devem pertencer aos produtos selecionados.');
+    }
+
+    const { contentMediaType } = this.fields;
+
+    if (media.some(item => !mediaMatchesType(item.contentType, contentMediaType))) {
+      throw new AppError('invalid', `Um conteúdo de ${mediaTypeLabel(contentMediaType)} só aceita ${mediaTypeLabel(contentMediaType, true)}.`);
     }
 
     const orderedProducts = productIds.map(id => {
@@ -142,6 +163,7 @@ export class Content {
       guidelines: rule.guidelines,
       products: products.map(product => product.description ? product.name + ': ' + product.description : product.name),
       brief: this.fields.editorial.brief,
+      ...(this.fields.contentMediaType === ContentMediaType.VIDEO && { mediaType: ContentMediaType.VIDEO }),
       ...brandVoice(brand),
     };
   }

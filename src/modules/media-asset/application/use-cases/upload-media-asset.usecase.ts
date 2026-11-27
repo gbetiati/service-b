@@ -4,6 +4,7 @@ import { RequestContext } from '@/shared/core/request-context/request-context';
 import { StorageProvider } from '@/shared/libs/storage/storage.provider';
 import { ProductRepository } from '@/modules/product/domain/repositories/product.repository';
 import { MediaAsset } from '../../domain/entities/media-asset.entity';
+import { MediaAssetKind } from '../../domain/entities/media-asset-kind';
 import { ImageProcessorProvider } from '../../domain/providers/image-processor.provider';
 import { VideoFileInspector } from '../../domain/providers/video-file-inspector.provider';
 import { MediaAssetRepository } from '../../domain/repositories/media-asset.repository';
@@ -19,11 +20,11 @@ export class UploadMediaAssetUseCase {
     private readonly videoFileInspector: VideoFileInspector,
   ) {}
 
-  async execute (productId: string, file: Buffer, mimeType?: string) {
+  async execute (productId: string, file: Buffer, mimeType?: string, kind = MediaAssetKind.PRODUCT) {
     requireRecord(await this.productRepository.findById(productId), 'Produto');
     const video = MediaAsset.isVideoUpload(file, mimeType);
     const body = video ? await this.validatedVideo(file) : await this.imageProcessorProvider.normalize(file);
-    const asset = MediaAsset.create(this.requestContext.companyId, productId, body.length, video ? 'video/mp4' : 'image/jpeg');
+    const asset = MediaAsset.create(this.requestContext.companyId, productId, body.length, video ? 'video/mp4' : 'image/jpeg', kind);
     await this.storageProvider.put(asset.storageKey, body, asset.contentType);
 
     try {

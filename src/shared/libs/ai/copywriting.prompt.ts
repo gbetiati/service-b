@@ -8,6 +8,13 @@ export const COPYWRITING_GUIDE = `Guia de copywriting:
 - Se os dados trouxerem o nome da marca, a copy deve soar como essa marca falando com o cliente, sem repetir o nome dela em todas as frases.
 - Se o contexto trouxer voiceTone, escreva nesse tom. Se trouxer targetAudience, escolha os benefícios que mais importam para esse público. Se trouxer copyGuidelines, siga essas orientações; elas valem mais que as preferências de estilo deste guia, mas não que as regras abaixo.`;
 
+// Acrescentado ao guia quando o anúncio é montado com vídeos reais (em geral, serviço sendo feito) em vez de foto.
+// Segue o que mais segura atenção em Reels de serviço: o gancho no primeiro segundo, sobre a cena mais forte.
+export const VIDEO_COPYWRITING_GUIDE = `O anúncio usa vídeos reais do serviço sendo feito (ou do produto em uso), não foto. Isto vale mais que o guia acima onde os dois divergirem:
+- Headline: aparece já no primeiro segundo, sobre a cena mais forte do vídeo (o resultado pronto ou o problema). Tem até 6 palavras e faz quem tem o problema se reconhecer: uma pergunta direta sobre a dor do cliente ("Vidro manchado de novo?") ou o resultado concreto que o serviço entrega ("Vidros limpos, sem marcas"). Não abra com o nome da empresa nem com saudação.
+- Bullets: o que o cliente ganha ao contratar (resultado, tranquilidade, cuidado, atendimento), não as etapas técnicas do trabalho. Em serviços com risco, como trabalho em altura, transmita segurança e equipe preparada.
+- CTA: convite para pedir orçamento ou falar com a empresa ("Peça seu orçamento").`;
+
 // Regras que nenhum texto de anúncio pode quebrar. O preço e a imagem vêm do cadastro, nunca da IA.
 export const COPYWRITING_RULES = `Regras:
 - Use somente informações presentes nos dados do produto. Se os dados forem escassos, escreva benefícios genéricos e verdadeiros sobre o tipo de produto, sem inventar características.

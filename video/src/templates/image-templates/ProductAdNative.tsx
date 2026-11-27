@@ -1,8 +1,8 @@
 import React from 'react';
 import { AbsoluteFill, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import type { ProductAdProps } from '../../../src/modules/video-generation/domain/entities/product-ad';
-import { FONT_FAMILY, SafeArea, fitFontSize, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout } from './shared';
-import { AdAudio } from './audio';
+import type { ProductAdProps } from '../../../../src/modules/video-generation/domain/entities/product-ad';
+import { useSafeArea, LOGO_BUG_SPACE, LogoBadge, LogoBug, imageAt, FONT_FAMILY, SafeArea, fitFontSize, optionalColor, readableOn, safeColor, splitWords, useEnter, useLayout } from '../shared';
+import { AdAudio } from '../audio';
 
 // Visual nativo de Reels: foto em tela cheia com leve movimento de câmera na mão, cortes secos de zoom e legendas no
 // estilo das legendas automáticas (2 a 3 palavras por vez, a palavra falada destacada na cor da marca). Lê bem sem som.
@@ -29,9 +29,9 @@ export const ProductAdNative: React.FC<ProductAdProps> = ({ copy, product, brand
   return (
     <AbsoluteFill style={{ backgroundColor: '#000000', fontFamily: `${FONT_FAMILY}, sans-serif` }}>
       <AdAudio audio={audio} cues={{ hook: 0, benefits: segmentStarts.slice(1), cta: SCENES.cta[0] }} />
-      <HandheldPhoto imageUrl={product.imageUrl} shot={segment} shotStart={segment >= 0 ? segmentStarts[segment] : CAPTIONS_END} />
+      <HandheldPhoto imageUrl={imageAt(product, Math.max(0, segment))} shot={segment} shotStart={segment >= 0 ? segmentStarts[segment] : CAPTIONS_END} />
       <Sequence from={0} durationInFrames={CAPTIONS_END} name="Captions">
-        <Captions words={words} chunks={chunks} colors={[color, accent]} />
+        <Captions words={words} chunks={chunks} colors={[color, accent]} logo={!!brand.logoUrl} />
       </Sequence>
       <Sequence from={SCENES.price[0]} durationInFrames={SCENES.price[1]} name="Price">
         <PriceSticker color={color} accent={accent} name={product.name} price={product.price} oldPrice={product.oldPrice} />
@@ -39,6 +39,7 @@ export const ProductAdNative: React.FC<ProductAdProps> = ({ copy, product, brand
       <Sequence from={SCENES.cta[0]} durationInFrames={SCENES.cta[1]} name="CTA">
         <CtaScene cta={copy.cta} logoUrl={brand.logoUrl} color={accent} />
       </Sequence>
+      <LogoBug logoUrl={brand.logoUrl} />
     </AbsoluteFill>
   );
 };
@@ -88,7 +89,8 @@ const captionText = (unit: number): React.CSSProperties => ({
   color: '#ffffff', WebkitTextStroke: `${10 * unit}px #000000`, paintOrder: 'stroke fill', textShadow: `0 ${6 * unit}px ${18 * unit}px rgba(0,0,0,0.45)`,
 });
 
-const Captions: React.FC<{ words: Word[]; chunks: Chunk[]; colors: [string, string] }> = ({ words, chunks, colors }) => {
+const Captions: React.FC<{ words: Word[]; chunks: Chunk[]; colors: [string, string]; logo: boolean }> = ({ words, chunks, colors, logo }) => {
+  const safe = useSafeArea();
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const { unit, landscape } = useLayout();
@@ -101,7 +103,7 @@ const Captions: React.FC<{ words: Word[]; chunks: Chunk[]; colors: [string, stri
   const fontSize = Math.max(64, Math.min(landscape ? 96 : 108, 1250 / Math.max(letters, 1))) * unit;
 
   return (
-    <SafeArea style={{ justifyContent: 'center', alignItems: 'center' }}>
+    <SafeArea style={{ justifyContent: 'center', alignItems: 'center', paddingTop: safe.top + (logo ? LOGO_BUG_SPACE * unit : 0) }}>
       <div style={{
         display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', columnGap: 22 * unit, rowGap: 10 * unit, maxWidth: landscape ? '70%' : '100%',
         fontSize, fontWeight: 900, lineHeight: 1.1, textTransform: 'uppercase', textAlign: 'center', transform: `scale(${0.8 + 0.2 * pop})`, opacity: Math.min(1, pop * 2),
@@ -152,7 +154,7 @@ const CtaScene: React.FC<{ cta: string; logoUrl?: string; color: string }> = ({ 
 
   return (
     <SafeArea style={{ justifyContent: 'center', alignItems: 'center', gap: 40 * unit }}>
-      {logoUrl && <Img src={logoUrl} style={{ maxWidth: 260 * unit, maxHeight: 100 * unit, objectFit: 'contain', opacity: pop }} />}
+      {logoUrl && <LogoBadge logoUrl={logoUrl} height={150} style={{ opacity: pop }} />}
       <div style={{ fontSize: (landscape ? 100 : 110) * unit, fontWeight: 900, lineHeight: 1.05, textTransform: 'uppercase', textAlign: 'center', transform: `scale(${pop})`, ...captionText(unit) }}>{cta}</div>
       <div style={{ width: 130 * unit, height: 130 * unit, borderRadius: '50%', backgroundColor: color, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: arrow, transform: `translateY(${bounce}px) scale(${arrow})`, boxShadow: `0 ${12 * unit}px ${30 * unit}px rgba(0,0,0,0.4)` }}>
         <svg width={70 * unit} height={70 * unit} viewBox="0 0 24 24">
