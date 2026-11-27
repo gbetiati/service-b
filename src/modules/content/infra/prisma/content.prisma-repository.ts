@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { contentSelectionFilter } from './content-list.filters';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AppError } from '@/shared/core/errors/app.error';
 import { RequestContext } from '@/shared/core/request-context/request-context';
@@ -113,9 +114,8 @@ export class PrismaContentRepository implements ContentRepository {
     const contains = { contains: search, mode: 'insensitive' } as const;
     const where: Prisma.ContentWhereInput = {
       companyId: this.requestContext.companyId,
-      status,
+      ...contentSelectionFilter({ productId, status }),
       AND: [
-        productId ? { OR: [{ productId }, { products: { some: { productId } } }] } : {},
         search ? { OR: [{ product: { name: contains } }, { campaing: { name: contains } }, { id: contains }] } : {},
       ],
     };

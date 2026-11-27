@@ -1,7 +1,18 @@
 import type { ContentPreparationCandidate, ContentPreparationInput } from '@/modules/content/domain/repositories/content-preparation.repository';
 import type { Content, ContentAudio } from '@/modules/content/domain/entities/content.entity';
 import type { ContentMediaType } from '@/modules/content/domain/entities/content-media-type';
+import type { ContentListFilters } from '@/modules/content/domain/repositories/content.repository';
 import type { PublicationSchedule } from '../entities/content-scheduled.entity';
+import type { PublicationStatus } from '../entities/publication.entity';
+
+export type CalendarSchedule = Pick<PublicationSchedule, 'id' | 'contentId' | 'date' | 'status' | 'caption' | 'preparationError'> & {
+  productName: string | null;
+  campaignName: string | null;
+  accountHandle: string | null;
+  publicationStatus: PublicationStatus | null;
+};
+
+export type CalendarScheduleFilters = Pick<ContentListFilters, 'productId' | 'status'>;
 
 export type SaveContentScheduleInput = {
   companyId: string; contentId: string; videoId?: string; socialAccountId: string;
@@ -21,6 +32,8 @@ export abstract class ContentScheduleRepository {
   abstract save (input: SaveContentScheduleInput): Promise<PublicationSchedule>;
 
   abstract findById (id: string): Promise<PublicationSchedule | null>;
+
+  abstract findByDateRange (from: Date, to: Date, filters?: CalendarScheduleFilters): Promise<CalendarSchedule[]>;
 
   abstract findEligibleDrafts (): Promise<{ id: string }[]>;
 

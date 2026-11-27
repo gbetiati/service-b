@@ -2,6 +2,8 @@
 export enum ContentMediaType {
   IMAGE = 'IMAGE',
   VIDEO = 'VIDEO',
+  INFOGRAPHIC = 'INFOGRAPHIC',
+  CAROUSEL = 'CAROUSEL',
 }
 
 // Confere se uma mídia (pelo MIME guardado no cadastro) serve para o tipo do conteúdo.

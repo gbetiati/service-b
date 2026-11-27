@@ -9,6 +9,7 @@ import { PublicationSchedulingTransaction } from './application/ports/publicatio
 import { CreateScheduledPublicationUseCase } from './application/use-cases/create-scheduled-publication.usecase';
 import { GetPublicationScheduleUseCase } from './application/use-cases/get-publication-schedule.usecase';
 import { GetPublicationUseCase } from './application/use-cases/get-publication.usecase';
+import { ListPublicationSchedulesUseCase } from './application/use-cases/list-publication-schedules.usecase';
 import { ProcessScheduledContentUseCase } from './application/use-cases/process-scheduled-content.usecase';
 import { PublicationOrchestrator } from './application/use-cases/publication.orchestrator';
 import { PublishScheduledContentUseCase } from './application/use-cases/publish-scheduled-content.usecase';
@@ -25,7 +26,7 @@ import { PublicationScheduler } from './infra/schedule/publication.scheduler';
   controllers: [PublicationController],
   providers: [
     GetPublicationUseCase, GetPublicationScheduleUseCase, SchedulePublicationUseCase, CreateScheduledPublicationUseCase, PublishScheduledContentUseCase, PublicationOrchestrator,
-    ProcessScheduledContentUseCase, PublicationScheduler, PrismaPublicationRepository, PrismaContentScheduleRepository,
+    ListPublicationSchedulesUseCase, ProcessScheduledContentUseCase, PublicationScheduler, PrismaPublicationRepository, PrismaContentScheduleRepository,
     { provide: PublicationRepository, useExisting: PrismaPublicationRepository },
     { provide: ContentScheduleRepository, useExisting: PrismaContentScheduleRepository },
     { provide: PublicationSchedulingTransaction, useClass: PrismaPublicationSchedulingTransaction },

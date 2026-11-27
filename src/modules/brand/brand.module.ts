@@ -21,6 +21,6 @@ import { SharpLogoImageProcessor } from './infra/providers/sharp-logo-image-proc
     { provide: BrandRepository, useClass: PrismaBrandRepository },
     { provide: LogoImageProcessor, useClass: SharpLogoImageProcessor },
   ],
-  exports: [BrandRepository],
+  exports: [BrandRepository, UploadBrandLogoUseCase],
 })
 export class BrandModule {}

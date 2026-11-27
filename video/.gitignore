@@ -1,3 +1,8 @@
 node_modules
 out
 build
+
+# Saída de um tsc rodado por engano sem configuração: os templates são só .ts/.tsx (o projeto usa noEmit).
+src/**/*.js
+removed-templates-backup/**/*.js
+remotion.config.js

@@ -10,6 +10,15 @@ datasource db {
 model Company {
   id                    String                 @id @default(uuid())
   name                  String
+  // Onboarding: preenchido ao concluir. Vazio, o usuário vai para o onboarding depois do login.
+  onboardedAt           DateTime?
+  // Perfil do negócio, preenchido no onboarding (varredura do site e do Instagram, revisada pelo usuário).
+  website               String?
+  instagramHandle       String?
+  segment               String?
+  description           String?
+  phone                 String?
+  serviceArea           String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   users                 User[]
@@ -23,6 +32,7 @@ model Company {
   accounts              SocialAccount[]
   credentials           SocialCredential[]
   imageTemplateSettings ImageTemplateSetting[]
+  onboardingSessions    OnboardingSession[]
 
   @@map("companies")
 }
@@ -432,4 +442,35 @@ model ImageTemplateSetting {
 
   @@unique([companyId, template])
   @@map("image_template_settings")
+}
+
+enum OnboardingStatus {
+  RESEARCHING
+  READY
+  FAILED
+  COMPLETED
+}
+
+// Varredura do onboarding: o site e o @ do Instagram informados, a etapa em andamento (para a tela de progresso) e o
+// que foi encontrado sobre a empresa e a marca principal, que o usuário revisa antes de concluir. Roda no cron, com
+// lease, para sobreviver a reinícios do servidor.
+model OnboardingSession {
+  id              String           @id @default(uuid())
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId          String
+  websiteUrl      String?
+  instagramHandle String?
+  status          OnboardingStatus @default(RESEARCHING)
+  stage           String?
+  findings        Json?
+  error           String?
+  attempts        Int              @default(0)
+  leaseUntil      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status, leaseUntil])
+  @@index([companyId, createdAt])
+  @@map("onboarding_sessions")
 }

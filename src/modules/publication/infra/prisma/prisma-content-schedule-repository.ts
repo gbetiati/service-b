@@ -7,9 +7,10 @@ import { RequestContext } from '@/shared/core/request-context/request-context';
 import type { ContentPreparationInput } from '@/modules/content/domain/repositories/content-preparation.repository';
 import { ContentStatus } from '@/modules/content/domain/entities/content-status';
 import { preparationFailed, preparationReady, runnablePreparation } from '@/modules/content/infra/prisma/content-preparation.filters';
+import { contentSelectionFilter } from '@/modules/content/infra/prisma/content-list.filters';
 import { PublicationSchedule } from '../../domain/entities/content-scheduled.entity';
 import { CLAIM_LEASE_MS, PUBLICATION_CRON_BATCH_SIZE, PUBLICATION_GRACE_MS, PUBLICATION_PREPARATION_MS } from '../../domain/entities/publication-timing';
-import { ClaimedContentDraft, ContentScheduleRepository, SaveContentScheduleInput, ScheduledContentDraft } from '../../domain/repositories/content-schedule.repository';
+import { CalendarSchedule, CalendarScheduleFilters, ClaimedContentDraft, ContentScheduleRepository, SaveContentScheduleInput, ScheduledContentDraft } from '../../domain/repositories/content-schedule.repository';
 
 export const pendingSchedule = { status: 'WAITING', socialAccountId: { not: null } } satisfies Prisma.ContentScheduledWhereInput;
 const include = { publication: { select: { id: true, status: true, socialAccountId: true, caption: true } } } satisfies Prisma.ContentScheduledInclude;
@@ -32,6 +33,30 @@ export class PrismaContentScheduleRepository implements ContentScheduleRepositor
     const companyId = this.requestContext.companyId;
     const row = await this.prisma.contentScheduled.findUnique({ where: { companyId_id: { companyId, id } }, include });
     return row && this.toDomain(row);
+  }
+
+  async findByDateRange (from: Date, to: Date, { productId, status }: CalendarScheduleFilters = {}): Promise<CalendarSchedule[]> {
+    const content = productId || status ? { is: contentSelectionFilter({ productId, status }) } : undefined;
+    const rows = await this.prisma.contentScheduled.findMany({
+      where: { companyId: this.requestContext.companyId, date: { gte: from, lt: to }, content },
+      orderBy: [{ date: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true, contentId: true, date: true, status: true, caption: true, preparationError: true,
+        content: { select: { product: { select: { name: true } }, campaing: { select: { name: true } } } },
+        socialAccount: { select: { accountHandle: true } },
+        publication: { select: { status: true, caption: true, socialAccount: { select: { accountHandle: true } } } },
+      },
+    });
+
+    return rows.map(({ content, socialAccount, publication, caption, status, ...schedule }) => ({
+      ...schedule,
+      status: ContentStatus[status],
+      caption: caption ?? publication?.caption ?? null,
+      productName: content?.product.name ?? null,
+      campaignName: content?.campaing.name ?? null,
+      accountHandle: socialAccount?.accountHandle ?? publication?.socialAccount.accountHandle ?? null,
+      publicationStatus: publication?.status ?? null,
+    }));
   }
 
   findEligibleDrafts () {

@@ -12,6 +12,7 @@ import { ProductModule } from './modules/product/product.module';
 import { PublicationModule } from './modules/publication/publication.module';
 import { SocialAccountModule } from './modules/social-account/social-account.module';
 import { VideoGenerationModule } from './modules/video-generation/video-generation.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RequestContextModule } from './shared/core/request-context/request-context.module';
 
@@ -19,7 +20,7 @@ import { RequestContextModule } from './shared/core/request-context/request-cont
   imports: [
     ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RequestContextModule, ScheduleModule.forRoot(),
     IdentityModule, BrandModule, CampaignModule, CampaignRulesModule, ProductModule, MediaAssetModule,
-    ContentModule, VideoGenerationModule, SocialAccountModule, PublicationModule, ImageTemplateModule,
+    ContentModule, VideoGenerationModule, SocialAccountModule, PublicationModule, ImageTemplateModule, OnboardingModule,
   ],
 })
 export class AppModule {}

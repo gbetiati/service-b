@@ -9,8 +9,11 @@ export class CompanyController {
     private readonly getCompanyUseCase: GetCompanyUseCase,
   ) {}
 
+  // Inclui onboardingRequired: o frontend manda para o onboarding a empresa que ainda não o concluiu.
   @Get('me')
-  get () {
-    return this.getCompanyUseCase.execute();
+  async get () {
+    const company = await this.getCompanyUseCase.execute();
+    const { profile, ...rest } = company;
+    return { ...rest, ...profile, onboardingRequired: company.onboardingRequired };
   }
 }
